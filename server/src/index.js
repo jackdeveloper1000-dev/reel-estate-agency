@@ -8,7 +8,8 @@ const projectRoutes = require('./routes/projects');
 const authRoutes = require('./routes/auth');
 const paymentRoutes = require('./routes/payments');
 const { loadUser } = require('./utils/session');
-const { APP_SECRET, IS_PRODUCTION, PAYMENTS, SMS } = require('./config');
+const { apiKeyGuard, isValidKey } = require('./utils/apiKey');
+const { APP_SECRET, IS_PRODUCTION, PAYMENTS, SMS, API_KEYS } = require('./config');
 const { recoverInterrupted } = require('./services/jobs');
 
 fs.mkdirSync(path.join(STORAGE_DIR, 'projects'), { recursive: true });
@@ -18,12 +19,15 @@ app.use(cors({ origin: [CLIENT_ORIGIN, /localhost:\d+$/, /127\.0\.0\.1:\d+$/] })
 app.use(express.json({ limit: '15mb' }));
 app.set('trust proxy', 1);
 
-app.get('/api/health', async (_req, res) => {
+app.use('/api', apiKeyGuard); // x-api-key required on every /api route (except /api/health)
+
+app.get('/api/health', async (req, res) => {
   const ok = await db.ping();
   res.json({
     ok: true,
     db: ok ? 'connected' : 'disconnected',
     database: 'mysql',
+    apiKey: !API_KEYS.length ? 'not required' : isValidKey(req.get('x-api-key')) ? 'valid' : 'missing or invalid',
     ffmpeg: FFMPEG,
     ffmpegDrawtext: FFMPEG_DRAWTEXT,
     scraperProxy: Boolean(SCRAPER.apiUrl || SCRAPER.proxyUrl),
@@ -71,11 +75,18 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: err.message || 'Server error' });
 });
 
-app.listen(PORT, () => console.log(`✔ RealAssets AI API running on http://localhost:${PORT}`));
+app.listen(PORT, () => {
+  console.log(`✔ RealAssets AI API running on http://localhost:${PORT}`);
+  // Addresses the Flutter app on a real phone (same Wi-Fi) can use
+  const lan = Object.values(require('os').networkInterfaces()).flat()
+    .filter((n) => n && n.family === 'IPv4' && !n.internal).map((n) => `http://${n.address}:${PORT}`);
+  if (lan.length) console.log(`  Mobile app server address (same Wi-Fi): ${lan.join('  ')}`);
+});
 if (APP_SECRET === 'dev-only-secret-change-me') {
   console.warn(`${IS_PRODUCTION ? '✖' : '!'} APP_SECRET is not set in server/.env – set a long random value before going live.`);
 }
 console.log(`  Payments: ${PAYMENTS.keyId && PAYMENTS.keySecret ? `Razorpay (${PAYMENTS.keyId.startsWith('rzp_live') ? 'LIVE' : 'test'} keys)` : 'DEMO mode – add RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET'} · ₹${PAYMENTS.pricePerFilm} per film`);
+console.log(`  API key:  ${API_KEYS.length ? `required (${API_KEYS.length} key${API_KEYS.length > 1 ? 's' : ''})` : 'OFF – set API_KEY in server/.env to protect the API'}`);
 console.log(`  SMS/OTP:  ${SMS.provider === 'console' ? 'console – codes are printed here and shown on screen' : SMS.provider}`);
 
 // Connect to MySQL (creates the database + tables on first run). Retries until MySQL is up.

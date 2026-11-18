@@ -53,10 +53,13 @@ function clearSession(res) {
   res.clearCookie(COOKIE, { path: '/' });
 }
 
-/** Adds req.user ({ id, name, phone }) when a valid session cookie is present. */
+/** Adds req.user ({ id, name, phone }) from the login cookie (website) or an
+ *  "Authorization: Bearer <token>" header (mobile app). */
 async function loadUser(req, _res, next) {
   try {
-    const data = readToken(parseCookies(req.headers.cookie)[COOKIE]);
+    const auth = req.headers.authorization || '';
+    const bearer = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+    const data = readToken(bearer || parseCookies(req.headers.cookie)[COOKIE]);
     if (data) {
       const [[u]] = await getPool().query('SELECT id, name, phone, is_active FROM users WHERE id = ?', [data.uid]);
       if (u && u.is_active) req.user = { id: u.id, name: u.name, phone: u.phone };
@@ -70,4 +73,4 @@ function requireUser(req, res, next) {
   res.status(401).json({ error: 'Please log in to continue.', code: 'LOGIN_REQUIRED' });
 }
 
-module.exports = { setSession, clearSession, loadUser, requireUser };
+module.exports = { setSession, clearSession, loadUser, requireUser, makeToken };

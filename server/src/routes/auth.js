@@ -1,7 +1,7 @@
 /**
  * Phone + OTP sign-up and login.
  *   POST /api/auth/otp     { phone, purpose: 'signup'|'login', name? }  → sends a 6-digit code
- *   POST /api/auth/verify  { phone, code }                               → creates/logs in the user
+ *   POST /api/auth/verify  { phone, code }                               → creates/logs in the user (+ token for the app)
  *   GET  /api/auth/me      → current user (or null)
  *   PATCH /api/auth/me     { name }
  *   POST /api/auth/logout
@@ -11,7 +11,7 @@ const crypto = require('crypto');
 const { getPool } = require('../db');
 const { APP_SECRET } = require('../config');
 const { sendOtp, isConsole } = require('../services/sms');
-const { setSession, clearSession, requireUser } = require('../utils/session');
+const { setSession, clearSession, requireUser, makeToken } = require('../utils/session');
 
 const router = express.Router();
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -115,7 +115,8 @@ router.post('/verify', wrap(async (req, res) => {
   await db.query('UPDATE users SET last_login_at = NOW() WHERE id = ?', [user.id]);
 
   setSession(res, user.id);
-  res.json({ user: publicUser(user), isNew: otp.purpose === 'signup' });
+  // token: for the mobile app (sent back as "Authorization: Bearer <token>")
+  res.json({ user: publicUser(user), isNew: otp.purpose === 'signup', token: makeToken(user.id) });
 }));
 
 router.get('/me', (req, res) => res.json({ user: publicUser(req.user) }));

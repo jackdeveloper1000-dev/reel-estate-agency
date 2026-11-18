@@ -110,3 +110,15 @@ Settings in `server/.env` (see `.env.example`):
 
 New tables: `users`, `otp_codes`, `payments`; `projects.user_id` links each film to its owner.
 Films made before accounts existed have no owner and are hidden.
+
+## 7. API key
+
+Every `/api` request must carry the header `x-api-key: <key>` once `API_KEY` is set in `server/.env`
+(comma-separate several keys, e.g. one for the website and one for the app). `/api/health` stays open and
+reports `apiKey: valid / missing or invalid`. Set the matching key in:
+
+* `client/.env` → `VITE_API_KEY=…` (restart `npm run dev` / `start.bat` after changing it)
+* `mobile/.env` → `API_KEY=…`
+
+With `API_KEY` empty the check is off. Note: a key inside a website or app can be extracted by a determined
+user – it stops casual/bot access to the API; logins (OTP) and payments still protect each user's films.

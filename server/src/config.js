@@ -54,6 +54,8 @@ module.exports = {
   CLIENT_ORIGIN: process.env.CLIENT_ORIGIN || 'http://localhost:5180',
   FFMPEG: ffmpegInfo.bin,
   FFMPEG_DRAWTEXT: ffmpegInfo.drawtext,
+  // API keys clients must send as "x-api-key" (comma-separated). Empty = no API key check.
+  API_KEYS: String(process.env.API_KEY || '').split(',').map((k) => k.trim()).filter(Boolean),
   // Signs login sessions and OTP hashes. Set a long random value in server/.env.
   APP_SECRET: process.env.APP_SECRET || 'dev-only-secret-change-me',
   IS_PRODUCTION: process.env.NODE_ENV === 'production',

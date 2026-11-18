@@ -1,5 +1,9 @@
+// Sent with every API call – set VITE_API_KEY in client/.env (same value as API_KEY in server/.env)
+const API_KEY = import.meta.env.VITE_API_KEY || '';
+
 async function request(path, options = {}) {
-  const res = await fetch(`/api${path}`, options);
+  const headers = { ...(options.headers || {}), ...(API_KEY ? { 'x-api-key': API_KEY } : {}) };
+  const res = await fetch(`/api${path}`, { ...options, headers });
   let data = null;
   try { data = await res.json(); } catch { /* empty body */ }
   if (!res.ok) {
