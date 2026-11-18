@@ -4,7 +4,7 @@ const path = require('path');
 const crypto = require('crypto');
 const multer = require('multer');
 const Project = require('../models/Project');
-const { runScrape, enqueueRender, cancelRender, projectDir } = require('../services/jobs');
+const { runScrape, runScrapeHtml, enqueueRender, cancelRender, projectDir } = require('../services/jobs');
 const { imageInfo } = require('../utils/imageInfo');
 
 const router = express.Router();
@@ -60,6 +60,21 @@ router.post(
     }
     const p = await Project.create({ sourceUrl: url, source: 'url', settings, details });
     runScrape(p, { autoRender: !!autoRender }); // async – client polls
+    res.status(201).json(serialize(p));
+  })
+);
+
+// Create from pasted listing HTML (or direct image URLs)
+router.post(
+  '/html',
+  wrap(async (req, res) => {
+    const { html, url, settings, details, autoRender } = req.body || {};
+    const raw = String(html || '').trim();
+    if (!raw) return res.status(400).json({ error: 'Please paste the listing page HTML.' });
+    let sourceUrl = String(url || '').trim();
+    if (sourceUrl && !/^https?:\/\//i.test(sourceUrl)) sourceUrl = `https://${sourceUrl}`;
+    const p = await Project.create({ sourceUrl: sourceUrl || null, source: 'url', settings, details });
+    runScrapeHtml(p, raw, { autoRender: !!autoRender });
     res.status(201).json(serialize(p));
   })
 );
@@ -205,6 +220,27 @@ router.post(
     if (p.source !== 'url') return res.status(400).json({ error: 'Nothing to retry.' });
     runScrape(p);
     p.status = 'scraping';
+    res.json(serialize(p));
+  })
+);
+
+// Import from pasted listing HTML (fallback when a portal blocks the server with HTTP 403)
+router.post(
+  '/:id/html',
+  wrap(async (req, res) => {
+    const p = await load(req, res);
+    if (!p) return;
+    const raw = String(req.body?.html || '').trim();
+    if (!raw) return res.status(400).json({ error: 'Please paste the listing page HTML.' });
+    if (req.body?.url && !p.sourceUrl) {
+      let u = String(req.body.url).trim();
+      if (u && !/^https?:\/\//i.test(u)) u = `https://${u}`;
+      p.sourceUrl = u;
+      await Project.save(p);
+    }
+    runScrapeHtml(p, raw);
+    p.status = 'scraping';
+    p.error = null;
     res.json(serialize(p));
   })
 );

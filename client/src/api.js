@@ -16,6 +16,8 @@ export const api = {
   list: () => request('/projects'),
   get: (id) => request(`/projects/${id}`),
   createFromUrl: (url, settings, autoRender = true) => request('/projects', json('POST', { url, settings, autoRender })),
+  createFromHtml: (html, url, settings, autoRender = false) => request('/projects/html', json('POST', { html, url, settings, autoRender })),
+  importHtml: (id, html, url) => request(`/projects/${id}/html`, json('POST', { html, url })),
   createFromPhotos: (files, settings) => {
     const fd = new FormData();
     [...files].forEach((f) => fd.append('photos', f));

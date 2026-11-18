@@ -7,6 +7,11 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const http = require('http');
+const https = require('https');
+const tls = require('tls');
+const zlib = require('zlib');
+const { SCRAPER } = require('../config');
 const { imageInfo } = require('../utils/imageInfo');
 
 const UA =
@@ -146,29 +151,208 @@ function parseDetails(html, ldBlocks) {
   return details;
 }
 
-async function fetchText(url) {
-  const res = await fetch(url, {
-    redirect: 'follow',
-    signal: AbortSignal.timeout(25000),
-    headers: {
-      'User-Agent': UA,
-      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-      'Accept-Language': 'en-AU,en;q=0.9',
-    },
-  });
-  if (!res.ok) {
-    const err = new Error(
-      res.status === 403 || res.status === 429
-        ? `This website blocked automatic access (HTTP ${res.status}). Please upload the photos instead.`
-        : `Could not open the listing (HTTP ${res.status}).`
-    );
-    err.status = res.status;
-    throw err;
-  }
-  return { html: await res.text(), finalUrl: res.url || url };
+function pageHeaders() {
+  return {
+    'User-Agent': UA,
+    Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+    'Accept-Language': 'en-IN,en-AU;q=0.9,en-US;q=0.8,en;q=0.7',
+    'Cache-Control': 'no-cache',
+    Pragma: 'no-cache',
+    'Sec-Ch-Ua': '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
+    'Sec-Ch-Ua-Mobile': '?0',
+    'Sec-Ch-Ua-Platform': '"Windows"',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'none',
+    'Sec-Fetch-User': '?1',
+    'Upgrade-Insecure-Requests': '1',
+  };
 }
 
-/** Collects candidate image URLs from raw HTML. Exported for testing. */
+function buildScraperApiUrl(template, targetUrl) {
+  const enc = encodeURIComponent(targetUrl);
+  if (template.includes('{url}')) return template.replace(/\{url\}/g, enc);
+  return `${template}${template.includes('?') ? '&' : '?'}url=${enc}`;
+}
+
+/** Zero-dependency HTTP/HTTPS proxy fetch (supports http://[user:pass@]host:port). */
+function fetchViaHttpProxy(targetUrl, proxyUrl, headers, timeoutMs = 30000, redirects = 5) {
+  return new Promise((resolve, reject) => {
+    const target = new URL(targetUrl);
+    const proxy = new URL(proxyUrl);
+    const isHttps = target.protocol === 'https:';
+    const proxyPort = Number(proxy.port) || (proxy.protocol === 'https:' ? 443 : 80);
+    const auth = proxy.username || proxy.password
+      ? 'Basic ' + Buffer.from(`${decodeURIComponent(proxy.username)}:${decodeURIComponent(proxy.password)}`).toString('base64')
+      : null;
+
+    let settled = false;
+    const done = (err, val) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (err) reject(err);
+      else resolve(val);
+    };
+    const timer = setTimeout(() => done(new Error('Proxy request timed out')), timeoutMs);
+
+    const handleRes = (res) => {
+      if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && redirects > 0) {
+        res.resume();
+        const nextUrl = new URL(res.headers.location, targetUrl).href;
+        fetchViaHttpProxy(nextUrl, proxyUrl, headers, timeoutMs, redirects - 1).then((v) => done(null, v), (e) => done(e));
+        return;
+      }
+      const enc = (res.headers['content-encoding'] || '').toLowerCase();
+      let stream = res;
+      if (enc === 'gzip') stream = res.pipe(zlib.createGunzip());
+      else if (enc === 'deflate') stream = res.pipe(zlib.createInflate());
+      else if (enc === 'br') stream = res.pipe(zlib.createBrotliDecompress());
+
+      const chunks = [];
+      stream.on('data', (c) => chunks.push(c));
+      stream.on('error', (e) => done(e));
+      stream.on('end', () => done(null, {
+        ok: res.statusCode >= 200 && res.statusCode < 300,
+        status: res.statusCode || 0,
+        url: targetUrl,
+        buffer: Buffer.concat(chunks),
+      }));
+    };
+
+    const reqHeaders = { ...headers, 'Accept-Encoding': 'gzip, deflate, br', Host: target.host };
+
+    if (!isHttps) {
+      if (auth) reqHeaders['Proxy-Authorization'] = auth;
+      const req = http.request({
+        host: proxy.hostname,
+        port: proxyPort,
+        method: 'GET',
+        path: targetUrl,
+        headers: reqHeaders,
+      }, handleRes);
+      req.on('error', (e) => done(e));
+      req.end();
+      return;
+    }
+
+    const connectHeaders = { Host: `${target.hostname}:${target.port || 443}` };
+    if (auth) connectHeaders['Proxy-Authorization'] = auth;
+    const connectReq = http.request({
+      host: proxy.hostname,
+      port: proxyPort,
+      method: 'CONNECT',
+      path: `${target.hostname}:${target.port || 443}`,
+      headers: connectHeaders,
+    });
+    connectReq.on('connect', (res, socket) => {
+      if (res.statusCode !== 200) {
+        socket.destroy();
+        return done(new Error(`Proxy CONNECT failed (HTTP ${res.statusCode})`));
+      }
+      const tlsSocket = tls.connect({ socket, servername: target.hostname });
+      tlsSocket.on('error', (e) => done(e));
+      const req = https.request({
+        host: target.hostname,
+        port: target.port || 443,
+        method: 'GET',
+        path: `${target.pathname}${target.search}`,
+        headers: reqHeaders,
+        createConnection: () => tlsSocket,
+      }, handleRes);
+      req.on('error', (e) => done(e));
+      req.end();
+    });
+    connectReq.on('error', (e) => done(e));
+    connectReq.end();
+  });
+}
+
+async function fetchViaConfiguredProxy(url) {
+  if (SCRAPER.apiUrl) {
+    const apiTarget = buildScraperApiUrl(SCRAPER.apiUrl, url);
+    let res = await fetch(apiTarget, {
+      redirect: 'follow',
+      signal: AbortSignal.timeout(45000),
+    });
+    // ZenRows returns HTTP 422 (RESP001) when a protected page requires JS rendering – retry once with js_render=true
+    if (res.status === 422 && /zenrows\.com/i.test(apiTarget) && !/[?&]js_render=true/i.test(apiTarget)) {
+      res = await fetch(`${apiTarget}&js_render=true`, {
+        redirect: 'follow',
+        signal: AbortSignal.timeout(65000),
+      });
+    }
+    if (!res.ok) {
+      const err = new Error(`Proxy API returned HTTP ${res.status}`);
+      err.status = res.status;
+      throw err;
+    }
+    return { html: await res.text(), finalUrl: url };
+  }
+  if (SCRAPER.proxyUrl) {
+    const res = await fetchViaHttpProxy(url, SCRAPER.proxyUrl, pageHeaders(), 35000);
+    if (!res.ok) {
+      const err = new Error(`Proxy returned HTTP ${res.status}`);
+      err.status = res.status;
+      throw err;
+    }
+    return { html: res.buffer.toString('utf8'), finalUrl: res.url || url };
+  }
+  return null;
+}
+
+function blockedError(status, fromProxy = false) {
+  let msg;
+  if (fromProxy && (status === 401 || status === 402)) {
+    msg = `Scraper proxy authentication/quota error (HTTP ${status} – check SCRAPER_API_URL in server/.env). You can still paste the page HTML or upload the photos instead.`;
+  } else if (status === 403 || status === 429) {
+    msg = `This website blocked automatic access (HTTP ${status}). You can paste the page HTML or upload the photos instead.`;
+  } else {
+    msg = `Could not open the listing (HTTP ${status}).`;
+  }
+  const err = new Error(msg);
+  err.status = status;
+  return err;
+}
+
+async function fetchText(url) {
+  const hasProxy = Boolean(SCRAPER.apiUrl || SCRAPER.proxyUrl);
+  if (SCRAPER.alwaysProxy && hasProxy) {
+    try {
+      return await fetchViaConfiguredProxy(url);
+    } catch (e) {
+      throw blockedError(e.status || 403, true);
+    }
+  }
+
+  let directStatus = 0;
+  let directErr = null;
+  try {
+    const res = await fetch(url, {
+      redirect: 'follow',
+      signal: AbortSignal.timeout(25000),
+      headers: pageHeaders(),
+    });
+    if (res.ok) return { html: await res.text(), finalUrl: res.url || url };
+    directStatus = res.status;
+  } catch (e) {
+    directErr = e;
+  }
+
+  // Fallback to configured scraping API or HTTP proxy when blocked (403/429/503) or network error
+  if (hasProxy && (directErr || [403, 429, 503].includes(directStatus))) {
+    try {
+      return await fetchViaConfiguredProxy(url);
+    } catch (e) {
+      throw blockedError(e.status || directStatus || 403, true);
+    }
+  }
+
+  if (directErr) throw directErr;
+  throw blockedError(directStatus);
+}
+
+/** Collects candidate image URLs from raw HTML (or a pasted list of URLs). Exported for testing. */
 function collectImageUrls(html, baseUrl) {
   const found = new Map(); // key -> {url, score, order}
   let order = 0;
@@ -241,18 +425,27 @@ function collectImageUrls(html, baseUrl) {
     while ((u = urlRe.exec(body))) add(u[0], 1, true);
   }
 
+  // 7. Plain image URLs (supports pasting direct image links or non-script HTML snippets)
+  if (found.size < 3) {
+    const plain = unescapeJson(html);
+    const urlRe = /https?:\/\/[^"'\s<>()\\]+?\.(?:jpe?g|png|webp)(?:\?[^"'\s<>()\\]*)?/gi;
+    let u;
+    while ((u = urlRe.exec(plain))) add(u[0], 1, true);
+  }
+
   const urls = [...found.values()].sort((a, b) => b.score - a.score || a.order - b.order).map((x) => x.url);
   return { urls, ldBlocks };
 }
 
 async function downloadImage(url, referer) {
-  const res = await fetch(url, {
-    signal: AbortSignal.timeout(20000),
-    headers: { 'User-Agent': UA, Referer: referer, Accept: 'image/webp,image/jpeg,image/png,image/*;q=0.8' },
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const buf = Buffer.from(await res.arrayBuffer());
-  return buf;
+  const headers = { 'User-Agent': UA, Referer: referer, Accept: 'image/webp,image/jpeg,image/png,image/*;q=0.8' };
+  const res = await fetch(url, { signal: AbortSignal.timeout(20000), headers });
+  if (res.ok) return Buffer.from(await res.arrayBuffer());
+  if (SCRAPER.proxyUrl && [403, 429].includes(res.status)) {
+    const proxied = await fetchViaHttpProxy(url, SCRAPER.proxyUrl, headers, 25000);
+    if (proxied.ok) return proxied.buffer;
+  }
+  throw new Error(`HTTP ${res.status}`);
 }
 
 async function mapLimit(items, limit, fn) {
@@ -269,17 +462,17 @@ async function mapLimit(items, limit, fn) {
 }
 
 /**
- * Scrapes a listing and saves photos to destDir.
+ * Extracts details + photos from already-fetched HTML and saves photos to destDir.
  * @returns {Promise<{details, images: Array<{file, sourceUrl, width, height}>}>}
  */
-async function scrapeListing(listingUrl, destDir, { maxImages = 30, onProgress } = {}) {
-  const { html, finalUrl } = await fetchText(listingUrl);
+async function scrapeHtml(html, baseUrl, destDir, { maxImages = 30, onProgress } = {}) {
+  const finalUrl = baseUrl && /^https?:\/\//i.test(baseUrl) ? baseUrl : 'https://localhost/';
   const { urls, ldBlocks } = collectImageUrls(html, finalUrl);
   const details = parseDetails(html, ldBlocks);
   onProgress && onProgress({ stage: 'found', count: urls.length });
 
   if (!urls.length) {
-    throw new Error('No property photos were found on that page. Try another link or upload the photos.');
+    throw new Error('No property photos were found in that page. Make sure you copied the full page source (Ctrl+U) or upload the photos.');
   }
 
   fs.mkdirSync(destDir, { recursive: true });
@@ -314,4 +507,13 @@ async function scrapeListing(listingUrl, destDir, { maxImages = 30, onProgress }
   return { details, images };
 }
 
-module.exports = { scrapeListing, collectImageUrls, parseDetails };
+/**
+ * Scrapes a listing URL and saves photos to destDir.
+ * @returns {Promise<{details, images: Array<{file, sourceUrl, width, height}>}>}
+ */
+async function scrapeListing(listingUrl, destDir, opts = {}) {
+  const { html, finalUrl } = await fetchText(listingUrl);
+  return scrapeHtml(html, finalUrl, destDir, opts);
+}
+
+module.exports = { scrapeListing, scrapeHtml, collectImageUrls, parseDetails };

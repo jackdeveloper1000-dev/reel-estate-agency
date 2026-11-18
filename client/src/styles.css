@@ -153,6 +153,12 @@ main { flex: 1; width: 100%; max-width: 1280px; margin: 0 auto; padding: 0 24px 
 .screen.placeholder { display: grid; place-items: center; min-height: 260px; background: radial-gradient(circle at 50% 40%, #16130b, #050505 70%); }
 .screen-msg { text-align: center; padding: 24px; }
 .screen-msg p { margin: 0 0 8px; }
+.screen.html-open { max-height: none; overflow: visible; }
+.html-box { width: 100%; max-width: 620px; padding: 24px; text-align: center; display: grid; gap: 12px; }
+.html-box .stage { margin: 0; }
+.html-steps { margin: 0; line-height: 1.5; }
+.html-box textarea { width: 100%; min-height: 140px; padding: 12px; border-radius: 10px; background: var(--bg-2); color: var(--text); border: 1px solid var(--line-2); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; resize: vertical; outline: none; }
+.html-box textarea:focus { border-color: var(--gold); }
 
 .progress-wrap { width: min(420px, 80%); text-align: center; }
 .stage { font-family: var(--serif); font-size: 20px; margin: 18px 0 14px; }

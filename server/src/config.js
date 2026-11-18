@@ -28,4 +28,9 @@ module.exports = {
   STORAGE_DIR: path.resolve(SERVER_ROOT, process.env.STORAGE_DIR || 'storage'),
   CLIENT_ORIGIN: process.env.CLIENT_ORIGIN || 'http://localhost:5173',
   FFMPEG: resolveFfmpeg(),
+  SCRAPER: {
+    apiUrl: (process.env.SCRAPER_API_URL || '').trim(),
+    proxyUrl: (process.env.SCRAPER_PROXY_URL || '').trim(),
+    alwaysProxy: String(process.env.SCRAPER_ALWAYS_PROXY || '').toLowerCase() === 'true',
+  },
 };

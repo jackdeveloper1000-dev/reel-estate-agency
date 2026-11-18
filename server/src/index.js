@@ -3,7 +3,7 @@ const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const db = require('./db');
-const { PORT, MYSQL, STORAGE_DIR, CLIENT_ORIGIN, FFMPEG } = require('./config');
+const { PORT, MYSQL, STORAGE_DIR, CLIENT_ORIGIN, FFMPEG, SCRAPER } = require('./config');
 const projectRoutes = require('./routes/projects');
 const { recoverInterrupted } = require('./services/jobs');
 
@@ -11,11 +11,17 @@ fs.mkdirSync(path.join(STORAGE_DIR, 'projects'), { recursive: true });
 
 const app = express();
 app.use(cors({ origin: [CLIENT_ORIGIN, /localhost:\d+$/, /127\.0\.0\.1:\d+$/] }));
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '15mb' }));
 
 app.get('/api/health', async (_req, res) => {
   const ok = await db.ping();
-  res.json({ ok: true, db: ok ? 'connected' : 'disconnected', database: 'mysql', ffmpeg: FFMPEG });
+  res.json({
+    ok: true,
+    db: ok ? 'connected' : 'disconnected',
+    database: 'mysql',
+    ffmpeg: FFMPEG,
+    scraperProxy: Boolean(SCRAPER.apiUrl || SCRAPER.proxyUrl),
+  });
 });
 // Friendly error while MySQL is unavailable
 app.use('/api/projects', (_req, res, next) => {

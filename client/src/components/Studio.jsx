@@ -31,6 +31,9 @@ export default function Studio({ id, onChange }) {
   const [saving, setSaving] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [showHtml, setShowHtml] = useState(false);
+  const [htmlText, setHtmlText] = useState('');
+  const [importingHtml, setImportingHtml] = useState(false);
   const musicRef = useRef(null);
   const addRef = useRef(null);
   const wasBusy = useRef(false);
@@ -137,6 +140,23 @@ export default function Studio({ id, onChange }) {
     try { setProject(await api.retry(id)); } catch (e) { setError(e.message); }
   };
 
+  const submitHtml = async (e) => {
+    e.preventDefault();
+    if (!htmlText.trim()) return setError('Paste the listing page HTML first.');
+    setError('');
+    setImportingHtml(true);
+    try {
+      const p = await api.importHtml(id, htmlText, project.sourceUrl);
+      setShowHtml(false);
+      setHtmlText('');
+      setProject(p);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setImportingHtml(false);
+    }
+  };
+
   // Two-step delete (no browser popup – some browsers block confirm dialogs)
   const remove = async () => {
     if (!confirmDel) {
@@ -182,19 +202,51 @@ export default function Studio({ id, onChange }) {
       <div className="studio-grid">
         {/* Screen */}
         <div className="screen-col">
-          <div className={`screen ${project.video && !busy ? '' : 'placeholder'}`} style={{ aspectRatio: aspect }}>
+          <div className={`screen ${project.video && !busy ? '' : 'placeholder'} ${showHtml ? 'html-open' : ''}`} style={showHtml ? undefined : { aspectRatio: aspect }}>
             {busy ? (
               <Progress project={project} />
             ) : project.video ? (
               <video key={project.video.url} src={project.video.url} poster={project.video.posterUrl || undefined} controls playsInline />
             ) : project.status === 'error' ? (
-              <div className="screen-msg">
-                <p className="error">{project.error}</p>
-                <div className="row">
-                  {project.source === 'url' && <button className="btn btn-ghost" onClick={retry}>Try again</button>}
-                  <button className="btn btn-gold" onClick={() => addRef.current?.click()}>Upload photos</button>
+              showHtml ? (
+                <form className="html-box" onSubmit={submitHtml}>
+                  <p className="stage">Import from page HTML</p>
+                  <p className="muted small html-steps">
+                    1.{' '}
+                    {project.sourceUrl ? (
+                      <a href={project.sourceUrl} target="_blank" rel="noreferrer">Open the listing page</a>
+                    ) : (
+                      'Open the listing page'
+                    )}{' '}
+                    in your browser · 2. Press <code>Ctrl+U</code> (View Source), then <code>Ctrl+A</code> and <code>Ctrl+C</code> · 3. Paste below.
+                  </p>
+                  <textarea
+                    rows={6}
+                    value={htmlText}
+                    onChange={(e) => setHtmlText(e.target.value)}
+                    placeholder="Paste full page HTML (or image URLs, one per line)…"
+                    disabled={importingHtml}
+                    autoFocus
+                  />
+                  <div className="row">
+                    <button type="submit" className="btn btn-gold" disabled={importingHtml || !htmlText.trim()}>
+                      {importingHtml ? <span className="spinner" /> : 'Extract photos'}
+                    </button>
+                    <button type="button" className="btn btn-ghost" onClick={() => setShowHtml(false)} disabled={importingHtml}>
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div className="screen-msg">
+                  <p className="error">{project.error}</p>
+                  <div className="row">
+                    {project.source === 'url' && <button className="btn btn-ghost" onClick={retry}>Try again</button>}
+                    <button className="btn btn-ghost" onClick={() => { setError(''); setShowHtml(true); }}>Paste page HTML</button>
+                    <button className="btn btn-gold" onClick={() => addRef.current?.click()}>Upload photos</button>
+                  </div>
                 </div>
-              </div>
+              )
             ) : (
               <div className="screen-msg">
                 <p className="stage">{images.length ? `${images.length} images collected` : 'No images yet'}</p>

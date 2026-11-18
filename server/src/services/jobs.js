@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const Project = require('../models/Project');
-const { scrapeListing } = require('./scraper');
+const { scrapeListing, scrapeHtml } = require('./scraper');
 const { renderVideo } = require('./videoEngine');
 const { STORAGE_DIR } = require('../config');
 
@@ -15,34 +15,55 @@ async function update(id, patch) {
   await Project.update(id, patch);
 }
 
+async function finishScrape(id, details, images, autoRender) {
+  const fresh = await Project.findById(id);
+  if (!fresh) return;
+  const max = fresh.settings.maxShots || 12;
+  fresh.images = images.map((img, i) => ({ ...img, selected: i < max }));
+  for (const k of ['title', 'address', 'price', 'description']) {
+    if (!fresh.details[k] && details[k]) fresh.details[k] = details[k].slice(0, 160);
+  }
+  fresh.status = 'ready';
+  fresh.stage = `${images.length} photos ready`;
+  fresh.progress = 100;
+  fresh.error = null;
+  await Project.save(fresh);
+  if (autoRender) enqueueRender(id);
+}
+
+function makeScrapeProgress(id) {
+  let lastWrite = 0;
+  return (p) => {
+    const now = Date.now();
+    if (now - lastWrite < 400) return;
+    lastWrite = now;
+    if (p.stage === 'found') update(id, { stage: `Found ${p.count} possible photos`, progress: 15 }).catch(() => {});
+    if (p.stage === 'download')
+      update(id, { stage: `Collecting photos ${p.done}/${p.total}`, progress: 15 + Math.round((p.done / p.total) * 80) }).catch(() => {});
+  };
+}
+
 async function runScrape(project, { autoRender = false } = {}) {
   const id = project._id;
   try {
     await update(id, { status: 'scraping', stage: 'Reading the listing…', progress: 5, error: null });
-    let lastWrite = 0;
     const { details, images } = await scrapeListing(project.sourceUrl, projectDir(id), {
-      onProgress: (p) => {
-        const now = Date.now();
-        if (now - lastWrite < 400) return;
-        lastWrite = now;
-        if (p.stage === 'found') update(id, { stage: `Found ${p.count} possible photos`, progress: 15 }).catch(() => {});
-        if (p.stage === 'download')
-          update(id, { stage: `Collecting photos ${p.done}/${p.total}`, progress: 15 + Math.round((p.done / p.total) * 80) }).catch(() => {});
-      },
+      onProgress: makeScrapeProgress(id),
     });
+    await finishScrape(id, details, images, autoRender);
+  } catch (err) {
+    await update(id, { status: 'error', error: err.message, stage: '' });
+  }
+}
 
-    const fresh = await Project.findById(id);
-    if (!fresh) return;
-    const max = fresh.settings.maxShots || 12;
-    fresh.images = images.map((img, i) => ({ ...img, selected: i < max }));
-    for (const k of ['title', 'address', 'price', 'description']) {
-      if (!fresh.details[k] && details[k]) fresh.details[k] = details[k].slice(0, 160);
-    }
-    fresh.status = 'ready';
-    fresh.stage = `${images.length} photos ready`;
-    fresh.progress = 100;
-    await Project.save(fresh);
-    if (autoRender) enqueueRender(id);
+async function runScrapeHtml(project, html, { autoRender = false } = {}) {
+  const id = project._id;
+  try {
+    await update(id, { status: 'scraping', stage: 'Extracting photos from HTML…', progress: 10, error: null });
+    const { details, images } = await scrapeHtml(html, project.sourceUrl, projectDir(id), {
+      onProgress: makeScrapeProgress(id),
+    });
+    await finishScrape(id, details, images, autoRender);
   } catch (err) {
     await update(id, { status: 'error', error: err.message, stage: '' });
   }
@@ -152,4 +173,4 @@ async function recoverInterrupted() {
   await Project.recoverInterrupted();
 }
 
-module.exports = { runScrape, enqueueRender, cancelRender, recoverInterrupted, projectDir };
+module.exports = { runScrape, runScrapeHtml, enqueueRender, cancelRender, recoverInterrupted, projectDir };
