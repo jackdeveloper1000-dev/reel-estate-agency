@@ -2,7 +2,13 @@ async function request(path, options = {}) {
   const res = await fetch(`/api${path}`, options);
   let data = null;
   try { data = await res.json(); } catch { /* empty body */ }
-  if (!res.ok) throw new Error((data && data.error) || `Request failed (${res.status})`);
+  if (!res.ok) {
+    const err = new Error((data && data.error) || `Request failed (${res.status})`);
+    err.status = res.status;
+    err.code = data && data.code;
+    if (res.status === 401 && typeof window !== 'undefined') window.dispatchEvent(new Event('ra:logged-out'));
+    throw err;
+  }
   return data;
 }
 
@@ -38,6 +44,20 @@ export const api = {
   render: (id) => request(`/projects/${id}/render`, json('POST')),
   retry: (id) => request(`/projects/${id}/retry`, json('POST')),
   remove: (id) => request(`/projects/${id}`, { method: 'DELETE' }),
+
+  // account
+  me: () => request('/auth/me'),
+  sendOtp: (phone, purpose, name) => request('/auth/otp', json('POST', { phone, purpose, name })),
+  verifyOtp: (phone, code) => request('/auth/verify', json('POST', { phone, code })),
+  updateMe: (name) => request('/auth/me', json('PATCH', { name })),
+  logout: () => request('/auth/logout', json('POST')),
+
+  // payments
+  price: () => request('/payments/price'),
+  paymentSummary: () => request('/payments/summary'),
+  payments: () => request('/payments'),
+  createOrder: () => request('/payments/order', json('POST')),
+  verifyPayment: (body) => request('/payments/verify', json('POST', body)),
 };
 
 export const BUSY = ['scraping', 'queued', 'rendering'];

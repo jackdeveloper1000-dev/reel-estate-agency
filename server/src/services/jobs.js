@@ -161,11 +161,39 @@ async function renderProject(id, signal) {
         renderedAt: new Date(),
       },
     });
+    // Film is final: delete the photos (and uploaded music) – only the video and its poster are kept
+    await removeSourceFiles(id, dir, [outName, result.poster ? path.basename(result.poster) : null]);
+    notifyFilmReady(project).catch((e) => console.warn('[sms] film-ready message failed:', e.message));
   } catch (err) {
     if (signal && signal.aborted) return; // project is being deleted
     console.error(`[render ${id}]`, err.message);
     await update(id, { status: 'error', error: err.message, stage: '' });
   }
+}
+
+/** Delete every file in the project folder except the finished film, and the photo rows in MySQL. */
+async function removeSourceFiles(id, dir, keep) {
+  const { getPool } = require('../db');
+  const keepSet = new Set(keep.filter(Boolean));
+  for (const name of fs.readdirSync(dir)) {
+    if (keepSet.has(name)) continue;
+    try { fs.rmSync(path.join(dir, name), { recursive: true, force: true, maxRetries: 3, retryDelay: 200 }); }
+    catch (e) { console.warn(`[cleanup ${id}] could not remove ${name}:`, e.message); }
+  }
+  await getPool().query('DELETE FROM project_images WHERE project_id = ?', [String(id)]);
+  await getPool().query('UPDATE projects SET music_file = NULL WHERE id = ?', [String(id)]);
+}
+
+/** Optional text message when a film finishes (SMS_NOTIFY_FILM_READY=true). */
+async function notifyFilmReady(project) {
+  const { SMS } = require('../config');
+  if (!SMS.notifyFilmReady || !project.userId) return;
+  const { getPool } = require('../db');
+  const { sendText } = require('./sms');
+  const [[u]] = await getPool().query('SELECT name, phone FROM users WHERE id = ?', [project.userId]);
+  if (!u) return;
+  const what = (project.details && (project.details.address || project.details.title)) || 'property';
+  await sendText(u.phone, `Hi ${u.name.split(' ')[0]}, your RealAssets AI film for ${what.slice(0, 60)} is ready to download.`);
 }
 
 /** After a restart, jobs that were mid-flight can't resume – mark them clearly. */

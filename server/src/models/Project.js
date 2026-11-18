@@ -50,6 +50,8 @@ function fromRow(row, imageRows = []) {
   if (video && video.renderedAt) video.renderedAt = new Date(video.renderedAt);
   return {
     _id: row.id,
+    userId: row.user_id == null ? null : Number(row.user_id),
+    paid: Boolean(Number(row.paid || 0)),
     sourceUrl: row.source_url,
     source: row.source,
     status: row.status,
@@ -72,6 +74,8 @@ function fromRow(row, imageRows = []) {
 function build(data = {}) {
   return {
     _id: newId(),
+    userId: data.userId || null,
+    paid: false,
     sourceUrl: data.sourceUrl || null,
     source: data.source === 'upload' ? 'upload' : 'url',
     status: data.status || 'scraping',
@@ -106,12 +110,12 @@ async function save(p) {
   try {
     await conn.beginTransaction();
     await conn.query(
-      `INSERT INTO projects (id, source_url, source, status, progress, stage, error, details, settings, music_file, video)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)
+      `INSERT INTO projects (id, user_id, source_url, source, status, progress, stage, error, details, settings, music_file, video)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
        ON DUPLICATE KEY UPDATE source_url=VALUES(source_url), source=VALUES(source), status=VALUES(status),
          progress=VALUES(progress), stage=VALUES(stage), error=VALUES(error), details=VALUES(details),
          settings=VALUES(settings), music_file=VALUES(music_file), video=VALUES(video)`,
-      [p._id, p.sourceUrl || null, p.source, p.status, Math.round(p.progress || 0), (p.stage || '').slice(0, 255),
+      [p._id, p.userId || null, p.sourceUrl || null, p.source, p.status, Math.round(p.progress || 0), (p.stage || '').slice(0, 255),
        p.error || null, JSON.stringify(p.details), JSON.stringify(p.settings), p.musicFile || null,
        p.video ? JSON.stringify(p.video) : null]
     );
@@ -133,15 +137,15 @@ async function create(data) {
 async function findById(id) {
   if (!isValidId(id)) return null;
   const db = getPool();
-  const [[row]] = await db.query('SELECT * FROM projects WHERE id = ?', [String(id)]);
+  const [[row]] = await db.query("SELECT p.*, EXISTS(SELECT 1 FROM payments pay WHERE pay.project_id = p.id AND pay.status = 'paid') AS paid FROM projects p WHERE p.id = ?", [String(id)]);
   if (!row) return null;
   const [imgs] = await db.query('SELECT * FROM project_images WHERE project_id = ? ORDER BY position', [row.id]);
   return fromRow(row, imgs);
 }
 
-async function list(limit = 40) {
+async function list(limit = 40, userId = null) {
   const db = getPool();
-  const [rows] = await db.query('SELECT * FROM projects ORDER BY created_at DESC LIMIT ?', [limit]);
+  const [rows] = await db.query("SELECT p.*, EXISTS(SELECT 1 FROM payments pay WHERE pay.project_id = p.id AND pay.status = 'paid') AS paid FROM projects p WHERE p.user_id = ? ORDER BY p.created_at DESC LIMIT ?", [userId, limit]);
   if (!rows.length) return [];
   const [imgs] = await db.query(
     'SELECT * FROM project_images WHERE project_id IN (?) ORDER BY project_id, position',

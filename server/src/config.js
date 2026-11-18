@@ -54,6 +54,27 @@ module.exports = {
   CLIENT_ORIGIN: process.env.CLIENT_ORIGIN || 'http://localhost:5180',
   FFMPEG: ffmpegInfo.bin,
   FFMPEG_DRAWTEXT: ffmpegInfo.drawtext,
+  // Signs login sessions and OTP hashes. Set a long random value in server/.env.
+  APP_SECRET: process.env.APP_SECRET || 'dev-only-secret-change-me',
+  IS_PRODUCTION: process.env.NODE_ENV === 'production',
+  SMS: {
+    // console = print OTP in the server window (development) | fast2sms | msg91 | twilio
+    provider: (process.env.SMS_PROVIDER || 'console').toLowerCase(),
+    fast2smsKey: process.env.FAST2SMS_API_KEY || '',
+    msg91AuthKey: process.env.MSG91_AUTH_KEY || '',
+    msg91OtpTemplateId: process.env.MSG91_OTP_TEMPLATE_ID || '',
+    msg91NotifyTemplateId: process.env.MSG91_NOTIFY_TEMPLATE_ID || '',
+    twilioSid: process.env.TWILIO_ACCOUNT_SID || '',
+    twilioToken: process.env.TWILIO_AUTH_TOKEN || '',
+    twilioFrom: process.env.TWILIO_FROM || '',
+    notifyFilmReady: String(process.env.SMS_NOTIFY_FILM_READY || 'false').toLowerCase() === 'true',
+  },
+  PAYMENTS: {
+    keyId: (process.env.RAZORPAY_KEY_ID || '').trim(),
+    keySecret: (process.env.RAZORPAY_KEY_SECRET || '').trim(),
+    pricePerFilm: Math.max(1, Number(process.env.PRICE_PER_FILM_INR) || 499), // rupees
+    currency: 'INR',
+  },
   SCRAPER: {
     apiUrl: (process.env.SCRAPER_API_URL || '').trim(),
     proxyUrl: (process.env.SCRAPER_PROXY_URL || '').trim(),

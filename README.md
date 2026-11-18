@@ -85,3 +85,28 @@ Tables (created automatically – see `server/database/schema.sql`, which you ca
 * **project_images** – the photos of each project, with `position` (order) and `selected`; deleted automatically with the project.
 
 Browse the data at http://localhost/phpmyadmin → `realassets_ai`.
+
+## 6. Accounts, OTP login & payments
+
+* **Sign up / log in** with name + mobile number and a 6-digit SMS code (no passwords). Sessions last 30 days (httpOnly cookie).
+* **Pay per film (Razorpay):** importing photos is free; the film page is a 4-step wizard
+  (Photos → Details → Style → Music & Pay) and the payment is taken on the last step. One payment = one render
+  (a failed render can be retried for free). Unused credits stay on the account.
+* **Finished films are final:** after a successful render the listing photos and uploaded music are deleted;
+  only the MP4 (and its poster) is kept, and the film page shows just the video and *Download MP4*.
+* **Private films:** each user only sees, plays and downloads their own films (`/media` is protected too).
+* **Phones:** app-style bottom bar (Create · My Films · Account); the film studio uses Photos / Details / Style / Music tabs
+  with a fixed *Make Film* bar.
+
+Settings in `server/.env` (see `.env.example`):
+
+| Setting | What it does |
+|---|---|
+| `APP_SECRET` | Long random string that signs logins – set it before going live |
+| `SMS_PROVIDER` | `console` (test – code shown on screen), `fast2sms`, `msg91` or `twilio` + their keys |
+| `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` | Razorpay API keys (test keys start with `rzp_test_`). Empty = demo payments |
+| `PRICE_PER_FILM_INR` | Price of one film (default 499) |
+| `SMS_NOTIFY_FILM_READY` | `true` = text the user when their film is ready |
+
+New tables: `users`, `otp_codes`, `payments`; `projects.user_id` links each film to its owner.
+Films made before accounts existed have no owner and are hidden.

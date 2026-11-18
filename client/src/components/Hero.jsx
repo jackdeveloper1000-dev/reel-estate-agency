@@ -1,5 +1,6 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
+import { go } from '../router.js';
 
 const FORMATS = [
   { v: '16:9', label: 'Landscape', sub: 'YouTube · Web' },
@@ -7,21 +8,30 @@ const FORMATS = [
   { v: '1:1', label: 'Square', sub: 'Feed posts' },
 ];
 
-export default function Hero({ onCreated }) {
-  const [url, setUrl] = useState('');
+const DRAFT = 'ra_draft_url';
+
+export default function Hero({ onCreated, user }) {
+  const [url, setUrl] = useState(() => { try { return sessionStorage.getItem(DRAFT) || ''; } catch { return ''; } });
   const [format, setFormat] = useState('16:9');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const fileRef = useRef(null);
+  const [price, setPrice] = useState(null);
 
-  const submit = async (e) => {
-    e.preventDefault();
-    if (!url.trim()) return setError('Paste a property listing link to begin.');
-    setBusy(true);
+  useEffect(() => { api.price().then((p) => setPrice(p.price)).catch(() => {}); }, []);
+
+  /** Login (if needed) → run the action. Importing photos is free; payment comes at "Make Film". */
+  const guarded = async (action) => {
     setError('');
+    if (!user) {
+      try { sessionStorage.setItem(DRAFT, url); } catch { /* ignore */ }
+      go('signup');
+      return;
+    }
+    setBusy(true);
     try {
-      const p = await api.createFromUrl(url.trim(), { format }, false);
-      onCreated(p);
+      await action();
+      try { sessionStorage.removeItem(DRAFT); } catch { /* ignore */ }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -29,18 +39,18 @@ export default function Hero({ onCreated }) {
     }
   };
 
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!url.trim()) return setError('Paste a property listing link to begin.');
+    const link = url.trim();
+    await guarded(async () => onCreated(await api.createFromUrl(link, { format }, false)));
+  };
+
   const onFiles = async (files) => {
     if (!files || !files.length) return;
-    setBusy(true);
-    setError('');
-    try {
-      const p = await api.createFromPhotos(files, { format });
-      onCreated(p);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
+    const list = [...files];
+    if (fileRef.current) fileRef.current.value = '';
+    await guarded(async () => onCreated(await api.createFromPhotos(list, { format })));
   };
 
   return (
@@ -91,6 +101,13 @@ export default function Hero({ onCreated }) {
           </button>
         ))}
       </div>
+
+      {price && (
+        <p className="price-note">
+          Fetching photos is free · <b>₹{Number(price).toLocaleString('en-IN')}</b> when you make the film
+          {!user && <> · <button type="button" className="link" onClick={() => go('login')}>Log in</button></>}
+        </p>
+      )}
 
       {error && <p className="error">{error}</p>}
 

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, BUSY } from '../api.js';
 import PhotoGrid from './PhotoGrid.jsx';
 import { go } from '../router.js';
+import PayModal from './PayModal.jsx';
 
 const OPTIONS = {
   format: [['16:9', 'Landscape 16:9'], ['9:16', 'Vertical 9:16'], ['1:1', 'Square 1:1']],
@@ -10,6 +11,9 @@ const OPTIONS = {
   motion: [['subtle', 'Subtle'], ['standard', 'Standard'], ['bold', 'Bold']],
   music: [['ambient', 'Cinematic ambient (built-in)'], ['upload', 'My own track'], ['none', 'No music']],
 };
+
+const STEPS = [['photos', 'Photos'], ['details', 'Details'], ['style', 'Style'], ['music', 'Music & Pay']];
+const label = (k, v) => (OPTIONS[k].find(([x]) => x === v) || OPTIONS[k][0])[1];
 
 const DETAIL_FIELDS = [
   ['address', 'Property address', '42 Ocean View Drive, Bondi'],
@@ -34,6 +38,9 @@ export default function Studio({ id, onChange }) {
   const [showHtml, setShowHtml] = useState(false);
   const [htmlText, setHtmlText] = useState('');
   const [importingHtml, setImportingHtml] = useState(false);
+  const [step, setStep] = useState('photos'); // wizard: photos → details → style → music & pay
+  const [payOpen, setPayOpen] = useState(false);
+  const [price, setPrice] = useState(null);
   const musicRef = useRef(null);
   const addRef = useRef(null);
   const wasBusy = useRef(false);
@@ -49,6 +56,7 @@ export default function Studio({ id, onChange }) {
   // initial load
   useEffect(() => {
     api.get(id).then(hydrate).catch((e) => setError(e.message));
+    api.price().then((r) => setPrice(r.price)).catch(() => {});
   }, [id]);
 
   // poll while busy; only refresh status/progress so in-progress edits aren't lost
@@ -105,18 +113,32 @@ export default function Studio({ id, onChange }) {
     return p;
   };
 
+  // One payment = one render (a failed render can be retried without paying again)
   const generate = async () => {
     setError('');
     setSaving(true);
     try {
-      await save();
+      const saved = await save();
+      if (!saved.paid) {
+        const s = await api.paymentSummary();
+        if (s.credits < 1) { setPayOpen(true); return; }
+      }
       const p = await api.render(id);
       setProject(p);
     } catch (e) {
-      setError(e.message);
+      if (e.code === 'PAYMENT_REQUIRED') setPayOpen(true);
+      else setError(e.message);
     } finally {
       setSaving(false);
     }
+  };
+  const priceLabel = price ? `₹${Number(price).toLocaleString('en-IN')}` : '';
+
+  const stepIndex = STEPS.findIndex(([k]) => k === step);
+  const isLast = stepIndex === STEPS.length - 1;
+  const goStep = (k) => {
+    setStep(k);
+    requestAnimationFrame(() => document.querySelector('.stepper')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   };
 
   const onMusic = async (file) => {
@@ -179,8 +201,44 @@ export default function Studio({ id, onChange }) {
   const title = details.address || project.details?.title || (project.sourceUrl ? new URL(project.sourceUrl).hostname : 'Uploaded photos');
   const aspect = (project.video?.width && project.video?.height) ? `${project.video.width} / ${project.video.height}` : (settings.format || '16:9').replace(':', ' / ');
 
+  // Finished film: photos are deleted, only the video is shown
+  if (project.status === 'done' && project.video) {
+    const v = project.video;
+    return (
+      <section className="studio final">
+        <div className="studio-head">
+          <div>
+            <button className="link back" onClick={() => go('films')}>← All films</button>
+            <h2>{title}</h2>
+            {details.price && <p className="muted final-price">{details.price}</p>}
+          </div>
+          <div className="head-actions">
+            <span className="badge s-done">Film ready</span>
+            <button className={`btn sm ${confirmDel ? 'btn-danger' : 'btn-ghost'}`} onClick={remove} disabled={deleting}>
+              {deleting ? 'Deleting…' : confirmDel ? 'Click again to delete' : 'Delete'}
+            </button>
+          </div>
+        </div>
+        {error && <p className="error top-error">{error}</p>}
+        <div className="final-player" style={{ aspectRatio: `${v.width || 16} / ${v.height || 9}` }}>
+          <video src={v.url} poster={v.posterUrl || undefined} controls playsInline preload="metadata" />
+        </div>
+        <div className="final-meta">
+          <span>{v.width && v.height ? `${v.width}×${v.height}` : settings.format}</span>
+          {v.duration ? <span>{Math.round(v.duration)}s</span> : null}
+          {v.renderedAt ? <span>Made {new Date(v.renderedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span> : null}
+        </div>
+        <div className="screen-actions step-actions final-actions">
+          <a className="btn btn-gold lg next-btn" href={v.url} download={`${slug(title)}.mp4`}>⬇ Download MP4</a>
+          <button className="btn btn-ghost lg" onClick={() => go('')}>+ New film</button>
+        </div>
+        <p className="muted small center final-note">The listing photos were removed after your film was made. Each payment covers one film.</p>
+      </section>
+    );
+  }
+
   return (
-    <section className="studio">
+    <section className="studio" data-mtab={step}>
       <div className="studio-head">
         <div>
           <button className="link back" onClick={() => go('films')}>← All films</button>
@@ -250,26 +308,23 @@ export default function Studio({ id, onChange }) {
             ) : (
               <div className="screen-msg">
                 <p className="stage">{images.length ? `${images.length} images collected` : 'No images yet'}</p>
-                <p className="muted">Step 2 — tick the photos you want, set the style, then press <b className="gold">Make Film</b>.</p>
+                <p className="muted">Tick the photos you want, then press <b className="gold">Next</b> to add details and style.</p>
               </div>
             )}
           </div>
 
-          <div className="screen-actions">
-            <button className="btn btn-gold lg" onClick={generate} disabled={busy || saving || !selectedCount}>
-              {saving ? <span className="spinner" /> : project.video ? 'Make Film Again' : '🎬 Make Film'}
-            </button>
-            {project.video && !busy && (
-              <a className="btn btn-ghost lg" href={project.video.url} download={`${slug(title)}.mp4`}>Download MP4</a>
-            )}
-            <span className="muted small">
-              {selectedCount} shots · ≈{estSeconds}s
-              {project.video?.duration ? ` · last render ${Math.round(project.video.duration)}s` : ''}
-            </span>
-          </div>
-          {dirty && project.video && !busy && <p className="hint">You have unsaved changes — press Make Film Again to apply them.</p>}
+          <ol className="stepper" aria-label="Film steps">
+            {STEPS.map(([k, label], i) => (
+              <li key={k} className={`${step === k ? 'on' : ''} ${i < stepIndex ? 'done' : ''}`}>
+                <button type="button" onClick={() => goStep(k)} aria-current={step === k ? 'step' : undefined}>
+                  <span className="num">{i < stepIndex ? '✓' : i + 1}</span>
+                  <span className="lbl">{label}{k === 'photos' && selectedCount ? <i>{selectedCount}</i> : null}</span>
+                </button>
+              </li>
+            ))}
+          </ol>
 
-          <div className="panel">
+          <div className="panel" data-tab="photos">
             <div className="panel-head">
               <h3>Photos <span className="muted">· click to include, drag to reorder</span></h3>
               <button className="btn btn-ghost sm" onClick={() => addRef.current?.click()} disabled={busy}>+ Add photos</button>
@@ -285,7 +340,7 @@ export default function Studio({ id, onChange }) {
 
         {/* Controls */}
         <aside className="controls">
-          <div className="panel">
+          <div className="panel" data-tab="details">
             <h3>Listing details</h3>
             {DETAIL_FIELDS.map(([k, label, ph]) => (
               <label key={k} className="field">
@@ -295,7 +350,7 @@ export default function Studio({ id, onChange }) {
             ))}
           </div>
 
-          <div className="panel">
+          <div className="panel" data-tab="style">
             <h3>Style</h3>
             <Select label="Format" k="format" settings={settings} setS={setS} disabled={busy} />
             <Select label="Transitions" k="transition" settings={settings} setS={setS} disabled={busy} />
@@ -312,7 +367,7 @@ export default function Studio({ id, onChange }) {
             </label>
           </div>
 
-          <div className="panel">
+          <div className="panel" data-tab="music">
             <h3>Music</h3>
             <Select label="Soundtrack" k="music" settings={settings} setS={setS} disabled={busy} />
             {settings.music === 'upload' && (
@@ -326,8 +381,50 @@ export default function Studio({ id, onChange }) {
               </div>
             )}
           </div>
+
+          <div className="panel review" data-tab="music">
+            <h3>Review &amp; make film</h3>
+            <ul className="review-list">
+              <li><span>Photos</span><b>{selectedCount} shots</b></li>
+              <li><span>Length</span><b>≈{estSeconds}s</b></li>
+              <li><span>Format</span><b>{settings.format || '16:9'}</b></li>
+              <li><span>Style</span><b>{label('grade', settings.grade)} · {label('transition', settings.transition)}</b></li>
+              <li className="total"><span>{project.paid ? 'Payment' : 'To pay'}</span><b>{project.paid ? 'Paid ✓' : priceLabel || '—'}</b></li>
+            </ul>
+            {!project.paid && <p className="muted small">One payment = one film. After it’s made, the photos are removed and your MP4 stays here to download.</p>}
+            {dirty && project.video && !busy && <p className="hint">You have unsaved changes — press Make Film Again to apply them.</p>}
+          </div>
         </aside>
       </div>
+
+      {/* Step navigation – the payment button only appears on the last step */}
+      <div className="screen-actions step-actions">
+        {busy ? (
+          <button className="btn btn-gold lg" disabled>{`${labelFor(project.status)} ${Math.max(0, project.progress || 0)}%`}</button>
+        ) : (
+          <>
+            {stepIndex > 0 && (
+              <button className="btn btn-ghost lg back-btn" onClick={() => goStep(STEPS[stepIndex - 1][0])}>← Back</button>
+            )}
+            {project.video && (
+              <a className="btn btn-ghost lg" href={project.video.url} download={`${slug(title)}.mp4`}>
+                <span className="dl-full">Download MP4</span><span className="dl-short">⬇ MP4</span>
+              </a>
+            )}
+            {!isLast ? (
+              <button className="btn btn-gold lg next-btn" onClick={() => goStep(STEPS[stepIndex + 1][0])} disabled={step === 'photos' && !selectedCount}>
+                {step === 'photos' && !selectedCount ? 'Select photos' : `Next: ${STEPS[stepIndex + 1][1]} →`}
+              </button>
+            ) : (
+              <button className="btn btn-gold lg next-btn" onClick={generate} disabled={saving || !selectedCount}>
+                {saving ? <span className="spinner" /> : project.paid || !priceLabel ? '🎬 Make Film' : `Pay ${priceLabel} & Make Film`}
+              </button>
+            )}
+          </>
+        )}
+      </div>
+
+      <PayModal open={payOpen} onClose={() => setPayOpen(false)} onPaid={() => { setPayOpen(false); generate(); }} />
     </section>
   );
 }

@@ -66,7 +66,7 @@ export default function Library({ projects, onChange, compact }) {
                   <div className="card-meta">
                     <span className={`badge s-${p.status}`}>{labelFor(p.status)}</span>
                     <span className="muted small">
-                      {p.settings?.format} · {p.images?.filter((i) => i.selected).length || 0} shots
+                      {p.settings?.format} · {p.video ? `${Math.round(p.video.duration || 0)}s film` : `${p.images?.filter((i) => i.selected).length || 0} shots`}
                     </span>
                   </div>
                 </div>

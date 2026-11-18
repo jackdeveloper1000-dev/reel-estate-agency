@@ -5,6 +5,10 @@ const cors = require('cors');
 const db = require('./db');
 const { PORT, MYSQL, STORAGE_DIR, CLIENT_ORIGIN, FFMPEG, FFMPEG_DRAWTEXT, SCRAPER } = require('./config');
 const projectRoutes = require('./routes/projects');
+const authRoutes = require('./routes/auth');
+const paymentRoutes = require('./routes/payments');
+const { loadUser } = require('./utils/session');
+const { APP_SECRET, IS_PRODUCTION, PAYMENTS, SMS } = require('./config');
 const { recoverInterrupted } = require('./services/jobs');
 
 fs.mkdirSync(path.join(STORAGE_DIR, 'projects'), { recursive: true });
@@ -12,6 +16,7 @@ fs.mkdirSync(path.join(STORAGE_DIR, 'projects'), { recursive: true });
 const app = express();
 app.use(cors({ origin: [CLIENT_ORIGIN, /localhost:\d+$/, /127\.0\.0\.1:\d+$/] }));
 app.use(express.json({ limit: '15mb' }));
+app.set('trust proxy', 1);
 
 app.get('/api/health', async (_req, res) => {
   const ok = await db.ping();
@@ -25,16 +30,27 @@ app.get('/api/health', async (_req, res) => {
   });
 });
 // Friendly error while MySQL is unavailable
-app.use('/api/projects', (_req, res, next) => {
+app.use(['/api/projects', '/api/auth', '/api/payments', '/media'], (_req, res, next) => {
   if (db.isConnected()) return next();
   res.status(503).json({
     error: 'Database not connected. Start MySQL in the XAMPP Control Panel – the API reconnects automatically.',
   });
 });
+app.use(['/api', '/media'], loadUser); // adds req.user from the login cookie
+app.use('/api/auth', authRoutes);
+app.use('/api/payments', paymentRoutes);
 app.use('/api/projects', projectRoutes);
 
-// Photos & rendered films (supports range requests for video seeking)
-app.use('/media', express.static(STORAGE_DIR, { maxAge: '1h', fallthrough: false }));
+// Photos & rendered films – only the film's owner can view or download them
+app.use('/media/projects/:id', async (req, res, next) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: 'Please log in.' });
+    const [[row]] = await db.getPool().query('SELECT user_id FROM projects WHERE id = ?', [req.params.id]);
+    if (!row || Number(row.user_id) !== req.user.id) return res.status(404).json({ error: 'Not found' });
+    next();
+  } catch (err) { next(err); }
+});
+app.use('/media', express.static(STORAGE_DIR, { maxAge: 0, fallthrough: false }));
 
 // Serve the built React app in production
 const clientDist = path.join(__dirname, '..', '..', 'client', 'dist');
@@ -56,6 +72,11 @@ app.use((err, _req, res, _next) => {
 });
 
 app.listen(PORT, () => console.log(`✔ RealAssets AI API running on http://localhost:${PORT}`));
+if (APP_SECRET === 'dev-only-secret-change-me') {
+  console.warn(`${IS_PRODUCTION ? '✖' : '!'} APP_SECRET is not set in server/.env – set a long random value before going live.`);
+}
+console.log(`  Payments: ${PAYMENTS.keyId && PAYMENTS.keySecret ? `Razorpay (${PAYMENTS.keyId.startsWith('rzp_live') ? 'LIVE' : 'test'} keys)` : 'DEMO mode – add RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET'} · ₹${PAYMENTS.pricePerFilm} per film`);
+console.log(`  SMS/OTP:  ${SMS.provider === 'console' ? 'console – codes are printed here and shown on screen' : SMS.provider}`);
 
 // Connect to MySQL (creates the database + tables on first run). Retries until MySQL is up.
 async function connectDb() {

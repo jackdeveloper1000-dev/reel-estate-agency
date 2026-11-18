@@ -6,8 +6,16 @@ const multer = require('multer');
 const Project = require('../models/Project');
 const { runScrape, runScrapeHtml, enqueueRender, cancelRender, projectDir } = require('../services/jobs');
 const { imageInfo } = require('../utils/imageInfo');
+const { requireUser } = require('../utils/session');
+const { useCredit } = require('./payments');
 
 const router = express.Router();
+router.use(requireUser); // every film belongs to a logged-in user
+
+const PAYMENT_REQUIRED = {
+  error: 'Please complete the payment to make this film.',
+  code: 'PAYMENT_REQUIRED',
+};
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -31,8 +39,25 @@ function serialize(p) {
 
 async function load(req, res) {
   const p = await Project.findById(req.params.id);
-  if (!p) res.status(404).json({ error: 'Project not found' });
+  if (!p || p.userId !== req.user.id) {
+    res.status(404).json({ error: 'Project not found' });
+    return null;
+  }
   return p;
+}
+
+/** A finished film is final: its photos are deleted and it can't be edited or rendered again. */
+function isFinal(p, res) {
+  if (p.video && p.video.file) {
+    res.status(409).json({ error: 'This film is already made. Start a new film to make another one.', code: 'FILM_FINAL' });
+    return true;
+  }
+  return false;
+}
+
+/** New (unpaid) film for this user – importing photos is free, payment is taken at "Make Film". */
+async function newProject(req, data) {
+  return Project.build({ ...data, userId: req.user.id });
 }
 
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -40,8 +65,8 @@ const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).cat
 // List recent projects
 router.get(
   '/',
-  wrap(async (_req, res) => {
-    const list = await Project.list(40);
+  wrap(async (req, res) => {
+    const list = await Project.list(60, req.user.id);
     res.json(list.map(serialize));
   })
 );
@@ -58,7 +83,8 @@ router.post(
     } catch {
       return res.status(400).json({ error: 'Please paste a valid property link.' });
     }
-    const p = await Project.create({ sourceUrl: url, source: 'url', settings, details });
+    const p = await newProject(req, { sourceUrl: url, source: 'url', settings, details });
+    await Project.save(p);
     runScrape(p, { autoRender: !!autoRender }); // async – client polls
     res.status(201).json(serialize(p));
   })
@@ -73,7 +99,8 @@ router.post(
     if (!raw) return res.status(400).json({ error: 'Please paste the listing page HTML.' });
     let sourceUrl = String(url || '').trim();
     if (sourceUrl && !/^https?:\/\//i.test(sourceUrl)) sourceUrl = `https://${sourceUrl}`;
-    const p = await Project.create({ sourceUrl: sourceUrl || null, source: 'url', settings, details });
+    const p = await newProject(req, { sourceUrl: sourceUrl || null, source: 'url', settings, details });
+    await Project.save(p);
     runScrapeHtml(p, raw, { autoRender: !!autoRender });
     res.status(201).json(serialize(p));
   })
@@ -91,7 +118,7 @@ router.post(
     try { details = JSON.parse(req.body.details || '{}'); } catch { /* ignore */ }
     try { settings = JSON.parse(req.body.settings || '{}'); } catch { /* ignore */ }
 
-    const p = Project.build({ source: 'upload', status: 'ready', details, settings, progress: 100 });
+    const p = await newProject(req, { source: 'upload', status: 'ready', details, settings, progress: 100 });
     const dir = projectDir(p._id);
     fs.mkdirSync(dir, { recursive: true });
     const images = [];
@@ -102,7 +129,10 @@ router.post(
       fs.writeFileSync(path.join(dir, file), f.buffer);
       images.push({ file, width: info.width, height: info.height, selected: images.length < (p.settings.maxShots || 12) });
     }
-    if (!images.length) return res.status(400).json({ error: 'Only JPG, PNG or WebP photos are supported.' });
+    if (!images.length) {
+      fs.rmSync(dir, { recursive: true, force: true });
+      return res.status(400).json({ error: 'Only JPG, PNG or WebP photos are supported.' });
+    }
     p.images = images;
     p.stage = `${images.length} photos ready`;
     await Project.save(p);
@@ -123,7 +153,7 @@ router.patch(
   '/:id',
   wrap(async (req, res) => {
     const p = await load(req, res);
-    if (!p) return;
+    if (!p || isFinal(p, res)) return;
     const { details, settings, images } = req.body || {};
     if (details && typeof details === 'object') {
       for (const [k, v] of Object.entries(details)) if (typeof v === 'string') p.details[k] = v.slice(0, 200);
@@ -155,7 +185,7 @@ router.post(
   upload.array('photos', 40),
   wrap(async (req, res) => {
     const p = await load(req, res);
-    if (!p) return;
+    if (!p || isFinal(p, res)) return;
     const dir = projectDir(p._id);
     fs.mkdirSync(dir, { recursive: true });
     for (const f of req.files || []) {
@@ -177,7 +207,7 @@ router.post(
   upload.single('music'),
   wrap(async (req, res) => {
     const p = await load(req, res);
-    if (!p) return;
+    if (!p || isFinal(p, res)) return;
     const f = req.file;
     if (!f) return res.status(400).json({ error: 'Please choose an audio file.' });
     const ext = (path.extname(f.originalname || '').toLowerCase() || '.mp3').replace(/[^.a-z0-9]/g, '');
@@ -200,11 +230,16 @@ router.post(
   '/:id/render',
   wrap(async (req, res) => {
     const p = await load(req, res);
-    if (!p) return;
+    if (!p || isFinal(p, res)) return;
     if (['rendering', 'queued', 'scraping'].includes(p.status)) {
       return res.status(409).json({ error: 'This project is already being processed.' });
     }
     if (!p.images.some((i) => i.selected)) return res.status(400).json({ error: 'Select at least one photo.' });
+    // One payment = one render. A failed render can be retried without paying again.
+    if (!p.paid) {
+      if (!(await useCredit(req.user.id, p._id))) return res.status(402).json(PAYMENT_REQUIRED);
+      p.paid = true;
+    }
     enqueueRender(p._id);
     p.status = 'queued';
     res.json(serialize(p));
@@ -216,7 +251,7 @@ router.post(
   '/:id/retry',
   wrap(async (req, res) => {
     const p = await load(req, res);
-    if (!p) return;
+    if (!p || isFinal(p, res)) return;
     if (p.source !== 'url') return res.status(400).json({ error: 'Nothing to retry.' });
     runScrape(p);
     p.status = 'scraping';
@@ -229,7 +264,7 @@ router.post(
   '/:id/html',
   wrap(async (req, res) => {
     const p = await load(req, res);
-    if (!p) return;
+    if (!p || isFinal(p, res)) return;
     const raw = String(req.body?.html || '').trim();
     if (!raw) return res.status(400).json({ error: 'Please paste the listing page HTML.' });
     if (req.body?.url && !p.sourceUrl) {
