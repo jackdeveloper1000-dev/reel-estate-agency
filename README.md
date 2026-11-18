@@ -1,4 +1,4 @@
-# RealAssets AI — Cinematic Real Estate Films (Node + React + MySQL)
+# ESTAMOTION — Cinematic Real Estate Films (Node + React + MySQL)
 
 Paste a property listing link → the app collects the listing photos and automatically renders a
 cinematic Full-HD film: eased camera moves (push-ins, pans, tilts), cross-transitions, golden colour

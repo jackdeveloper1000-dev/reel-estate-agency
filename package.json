@@ -2,7 +2,7 @@
   "name": "realassets-ai",
   "version": "1.0.0",
   "private": true,
-  "description": "RealAssets AI – paste a property link, get a cinematic listing film (MERN + FFmpeg)",
+  "description": "ESTAMOTION – paste a property link, get a cinematic listing film (MERN + FFmpeg)",
   "scripts": {
     "setup": "npm install && npm install --prefix server && npm install --prefix client",
     "dev": "concurrently -n api,web -c yellow,cyan \"npm run dev --prefix server\" \"npm run dev --prefix client\"",

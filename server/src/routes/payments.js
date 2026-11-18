@@ -99,7 +99,7 @@ router.post('/order', wrap(async (req, res) => {
       amount,
       currency: PAYMENTS.currency,
       receipt: `film_${req.user.id}_${Date.now()}`.slice(0, 40),
-      notes: { user_id: String(req.user.id), purpose: 'RealAssets AI film' },
+      notes: { user_id: String(req.user.id), purpose: 'ESTAMOTION film' },
     });
     orderId = order.id;
   } else {
@@ -115,7 +115,7 @@ router.post('/order', wrap(async (req, res) => {
     orderId,
     amount,
     currency: PAYMENTS.currency,
-    name: 'RealAssets AI',
+    name: 'ESTAMOTION',
     description: 'Cinematic property film',
     prefill: { name: req.user.name, contact: req.user.phone },
   });

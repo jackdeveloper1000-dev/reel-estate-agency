@@ -1,8 +1,8 @@
 @echo off
-title RealAssets AI
+title ESTAMOTION
 cd /d "%~dp0"
 echo.
-echo  ===== RealAssets AI - setup and start =====
+echo  ===== ESTAMOTION - setup and start =====
 echo.
 where node >nul 2>nul
 if errorlevel 1 (

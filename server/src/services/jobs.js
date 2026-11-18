@@ -193,7 +193,7 @@ async function notifyFilmReady(project) {
   const [[u]] = await getPool().query('SELECT name, phone FROM users WHERE id = ?', [project.userId]);
   if (!u) return;
   const what = (project.details && (project.details.address || project.details.title)) || 'property';
-  await sendText(u.phone, `Hi ${u.name.split(' ')[0]}, your RealAssets AI film for ${what.slice(0, 60)} is ready to download.`);
+  await sendText(u.phone, `Hi ${u.name.split(' ')[0]}, your ESTAMOTION film for ${what.slice(0, 60)} is ready to download.`);
 }
 
 /** After a restart, jobs that were mid-flight can't resume – mark them clearly. */

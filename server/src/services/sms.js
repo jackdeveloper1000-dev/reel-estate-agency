@@ -58,7 +58,7 @@ async function sendText(phone, text) {
 }
 
 async function sendOtp(phone, code) {
-  const text = `${code} is your RealAssets AI verification code. It expires in 5 minutes. Do not share it with anyone.`;
+  const text = `${code} is your ESTAMOTION verification code. It expires in 5 minutes. Do not share it with anyone.`;
   switch (SMS.provider) {
     case 'fast2sms':
       return call('https://www.fast2sms.com/dev/bulkV2', {

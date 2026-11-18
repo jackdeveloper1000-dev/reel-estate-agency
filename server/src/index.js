@@ -76,7 +76,7 @@ app.use((err, _req, res, _next) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`✔ RealAssets AI API running on http://localhost:${PORT}`);
+  console.log(`✔ ESTAMOTION API running on http://localhost:${PORT}`);
   // Addresses the Flutter app on a real phone (same Wi-Fi) can use
   const lan = Object.values(require('os').networkInterfaces()).flat()
     .filter((n) => n && n.family === 'IPv4' && !n.internal).map((n) => `http://${n.address}:${PORT}`);

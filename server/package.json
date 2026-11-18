@@ -1,7 +1,7 @@
 {
   "name": "realassets-ai-server",
   "version": "1.0.0",
-  "description": "RealAssets AI \u2013 cinematic real estate video generator (API, MySQL)",
+  "description": "ESTAMOTION – cinematic real estate video generator (API, MySQL)",
   "main": "src/index.js",
   "type": "commonjs",
   "scripts": {
