@@ -56,7 +56,7 @@ export default function Hero({ onCreated, user }) {
   return (
     <section className="hero">
       <div className="hero-glow" aria-hidden />
-      <p className="eyebrow">AI listing films · in minutes</p>
+      <p className="eyebrow">PROPERTY IN MOTION</p>
       <h1>
         Turn any listing into a <span className="gold-text">cinematic film</span>
       </h1>

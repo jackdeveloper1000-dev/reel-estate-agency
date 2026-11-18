@@ -71,8 +71,14 @@ export default function Auth({ mode = 'login', onDone }) {
   return (
     <section className="auth">
       <div className="auth-card">
-        <div className="auth-brand" aria-hidden>
-          <svg viewBox="0 0 64 64"><path d="M14 46V22l18-10 18 10v24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinejoin="round"/><path d="M28 30l10 6-10 6z" fill="currentColor"/></svg>
+        <div className="auth-brand-row">
+          <div className="auth-brand" aria-hidden>
+            <svg viewBox="0 0 64 64"><path d="M14 46V22l18-10 18 10v24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinejoin="round"/><path d="M28 30l10 6-10 6z" fill="currentColor"/></svg>
+          </div>
+          <div className="auth-brand-text">
+            <strong>ESTAMOTION</strong>
+            <small>PROPERTY IN MOTION</small>
+          </div>
         </div>
 
         {step === 'details' ? (

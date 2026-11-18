@@ -36,7 +36,10 @@ main { flex: 1; width: 100%; max-width: 1280px; margin: 0 auto; padding: 0 24px 
   padding: 16px 28px; border-bottom: 1px solid var(--line);
   background: rgba(7, 7, 7, 0.82); backdrop-filter: blur(14px);
 }
-.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text); font-family: var(--serif); font-size: 22px; font-weight: 600; letter-spacing: 0.3px; }
+.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text); font-family: var(--serif); font-size: 20px; font-weight: 600; letter-spacing: 0.8px; }
+.brand-text { display: flex; flex-direction: column; line-height: 1.05; }
+.brand-text strong { font-weight: 600; }
+.brand-text small { font-family: var(--sans); font-size: 9.5px; font-weight: 500; letter-spacing: 2.2px; text-transform: uppercase; color: var(--gold-2); margin-top: 3px; }
 .brand em { font-style: normal; margin-left: 4px; background: var(--gold-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .brand-mark { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; color: var(--gold); border: 1px solid var(--line-2); background: #0b0b0b; }
 .brand-mark svg { width: 22px; height: 22px; }
@@ -260,7 +263,11 @@ input[type='range'] { width: 100%; accent-color: var(--gold); }
 .auth-card { width: 100%; max-width: 420px; padding: 32px 28px; border-radius: 22px; background: linear-gradient(180deg, var(--panel), var(--bg-2)); border: 1px solid var(--line); box-shadow: 0 30px 80px -40px rgba(212, 175, 55, 0.35); }
 .auth-card h2 { font-family: var(--serif); font-weight: 600; font-size: 28px; margin: 14px 0 6px; }
 .auth-card > .muted { margin: 0 0 20px; font-size: 14.5px; }
-.auth-brand { width: 52px; height: 52px; border-radius: 14px; display: grid; place-items: center; color: var(--gold); border: 1px solid var(--line-2); background: #0b0b0b; }
+.auth-brand-row { display: flex; align-items: center; gap: 14px; }
+.auth-brand-text { display: flex; flex-direction: column; line-height: 1.1; }
+.auth-brand-text strong { font-family: var(--serif); font-size: 20px; font-weight: 600; letter-spacing: 1px; color: var(--text); }
+.auth-brand-text small { font-size: 10px; font-weight: 500; letter-spacing: 2.2px; text-transform: uppercase; color: var(--gold-2); margin-top: 4px; }
+.auth-brand { width: 52px; height: 52px; border-radius: 14px; display: grid; place-items: center; color: var(--gold); border: 1px solid var(--line-2); background: #0b0b0b; flex-shrink: 0; }
 .auth-brand svg { width: 30px; height: 30px; }
 .auth-form { margin-top: 4px; }
 .auth-form .error { margin: 8px 0 0; }

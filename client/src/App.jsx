@@ -96,7 +96,10 @@ export default function App() {
           <span className="brand-mark" aria-hidden>
             <svg viewBox="0 0 64 64"><path d="M14 46V22l18-10 18 10v24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinejoin="round"/><path d="M28 30l10 6-10 6z" fill="currentColor"/></svg>
           </span>
-          <span>ESTAMOTION</span>
+          <span className="brand-text">
+            <strong>ESTAMOTION</strong>
+            <small>PROPERTY IN MOTION</small>
+          </span>
         </a>
         <nav className="top-nav">
           {navItems.map((n) => (
@@ -121,7 +124,7 @@ export default function App() {
       <main>{page}</main>
 
       <footer className="footer">
-        <span>© {new Date().getFullYear()} ESTAMOTION</span>
+        <span>© {new Date().getFullYear()} ESTAMOTION · PROPERTY IN MOTION</span>
         <span className="muted">Cinematic films from real listing photos – nothing added that isn’t there.</span>
       </footer>
 
