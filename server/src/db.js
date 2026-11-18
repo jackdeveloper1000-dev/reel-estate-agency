@@ -9,6 +9,9 @@ const { MYSQL } = require('./config');
 let pool = null;
 let connected = false;
 
+const COLLATION = 'utf8mb4_general_ci';
+const TABLES = ['projects', 'project_images', 'users', 'otp_codes', 'payments'];
+
 const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS projects (
      id          CHAR(24)     NOT NULL PRIMARY KEY,
@@ -26,7 +29,7 @@ const SCHEMA = [
      updated_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
      INDEX idx_projects_status (status),
      INDEX idx_projects_created (created_at)
-   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=${COLLATION}`,
   `CREATE TABLE IF NOT EXISTS project_images (
      id          CHAR(24)     NOT NULL PRIMARY KEY,
      project_id  CHAR(24)     NOT NULL,
@@ -38,7 +41,7 @@ const SCHEMA = [
      selected    TINYINT(1)   NOT NULL DEFAULT 1,
      INDEX idx_images_project (project_id, position),
      CONSTRAINT fk_images_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
-   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=${COLLATION}`,
   `CREATE TABLE IF NOT EXISTS users (
      id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
      name          VARCHAR(100) NOT NULL,
@@ -46,7 +49,7 @@ const SCHEMA = [
      is_active     TINYINT(1)   NOT NULL DEFAULT 1,
      created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
      last_login_at DATETIME     NULL
-   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=${COLLATION}`,
   `CREATE TABLE IF NOT EXISTS otp_codes (
      id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
      phone       VARCHAR(20)  NOT NULL,
@@ -58,7 +61,7 @@ const SCHEMA = [
      expires_at  DATETIME     NOT NULL,
      created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
      INDEX idx_otp_phone (phone, created_at)
-   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=${COLLATION}`,
   `CREATE TABLE IF NOT EXISTS payments (
      id                  INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
      user_id             INT UNSIGNED NOT NULL,
@@ -73,10 +76,10 @@ const SCHEMA = [
      paid_at             DATETIME     NULL,
      INDEX idx_pay_user (user_id, status),
      CONSTRAINT fk_pay_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=${COLLATION}`,
 ];
 
-// Columns added after the first release – added in place so existing data is kept
+// Columns & collations added/aligned after the first release – updated in place so existing data is kept
 async function migrate(pool) {
   const [cols] = await pool.query(
     `SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'projects'`
@@ -85,20 +88,61 @@ async function migrate(pool) {
   if (!have.has('user_id')) {
     await pool.query('ALTER TABLE projects ADD COLUMN user_id INT UNSIGNED NULL AFTER id, ADD INDEX idx_projects_user (user_id)');
   }
+
+  // Align database + table/column collations to utf8mb4_general_ci (fixes MySQL 8 utf8mb4_0900_ai_ci mismatch)
+  const [tbls] = await pool.query(
+    `SELECT TABLE_NAME, TABLE_COLLATION FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE()`
+  );
+  const [colRows] = await pool.query(
+    `SELECT TABLE_NAME, COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND COLLATION_NAME IS NOT NULL`
+  );
+  const badSet = new Set();
+  for (const r of tbls) {
+    if (TABLES.includes(r.TABLE_NAME) && r.TABLE_COLLATION !== COLLATION) badSet.add(r.TABLE_NAME);
+  }
+  for (const r of colRows) {
+    if (TABLES.includes(r.TABLE_NAME) && r.COLLATION_NAME !== COLLATION) badSet.add(r.TABLE_NAME);
+  }
+
+  if (badSet.size) {
+    const conn = await pool.getConnection();
+    try {
+      await conn.query('SET FOREIGN_KEY_CHECKS = 0');
+      try {
+        await conn.query(`ALTER DATABASE \`${MYSQL.database}\` CHARACTER SET utf8mb4 COLLATE ${COLLATION}`);
+      } catch { /* ignore if DB user lacks ALTER DATABASE privilege */ }
+      for (const tableName of badSet) {
+        await conn.query(`ALTER TABLE \`${tableName}\` CONVERT TO CHARACTER SET utf8mb4 COLLATE ${COLLATION}`);
+      }
+    } finally {
+      await conn.query('SET FOREIGN_KEY_CHECKS = 1').catch(() => {});
+      conn.release();
+    }
+  }
 }
 
 async function connect() {
   const base = { host: MYSQL.host, port: MYSQL.port, user: MYSQL.user, password: MYSQL.password };
 
-  // 1. make sure the database exists
-  const admin = await mysql.createConnection(base);
-  await admin.query(
-    `CREATE DATABASE IF NOT EXISTS \`${MYSQL.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
-  );
-  await admin.end();
+  // 1. make sure the database exists (ignore privilege error on shared hosts where DB is pre-created)
+  try {
+    const admin = await mysql.createConnection(base);
+    await admin.query(
+      `CREATE DATABASE IF NOT EXISTS \`${MYSQL.database}\` CHARACTER SET utf8mb4 COLLATE ${COLLATION}`
+    );
+    await admin.end();
+  } catch (err) {
+    if (!['ER_DBACCESS_DENIED_ERROR', 'ER_ACCESS_DENIED_ERROR'].includes(err.code)) throw err;
+  }
 
-  // 2. pool for the app
-  pool = mysql.createPool({ ...base, database: MYSQL.database, waitForConnections: true, connectionLimit: 10 });
+  // 2. pool for the app (match connection collation to utf8mb4_general_ci)
+  pool = mysql.createPool({
+    ...base,
+    database: MYSQL.database,
+    charset: COLLATION,
+    waitForConnections: true,
+    connectionLimit: 10,
+  });
 
   // 3. tables
   for (const sql of SCHEMA) await pool.query(sql);
