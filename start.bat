@@ -35,7 +35,7 @@ echo  Starting... the site opens at http://localhost:5173
 echo  (the MySQL database realassets_ai is created automatically on first start)
 echo  Keep this window open while you use the app. Close it to stop.
 echo.
-start "" cmd /c "timeout /t 12 >nul & start http://localhost:5173"
+start "" cmd /c "timeout /t 12 >nul & start http://localhost:5180"
 call npm run dev
 pause
 exit /b 0

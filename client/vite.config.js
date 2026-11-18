@@ -6,7 +6,7 @@ function explain(proxy) {
   proxy.on('error', (_err, _req, res) => {
     if (res.headersSent) return;
     res.writeHead(502, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'API server is not running on port 5000. Run "npm run dev" from the project root and check the [api] logs.' }));
+    res.end(JSON.stringify({ error: 'API server is not running on port 5005. Run "npm run dev" from the project root and check the [api] logs.' }));
   });
 }
 
