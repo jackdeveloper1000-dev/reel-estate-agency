@@ -3,7 +3,7 @@ const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const db = require('./db');
-const { PORT, MYSQL, STORAGE_DIR, CLIENT_ORIGIN, FFMPEG, SCRAPER } = require('./config');
+const { PORT, MYSQL, STORAGE_DIR, CLIENT_ORIGIN, FFMPEG, FFMPEG_DRAWTEXT, SCRAPER } = require('./config');
 const projectRoutes = require('./routes/projects');
 const { recoverInterrupted } = require('./services/jobs');
 
@@ -20,6 +20,7 @@ app.get('/api/health', async (_req, res) => {
     db: ok ? 'connected' : 'disconnected',
     database: 'mysql',
     ffmpeg: FFMPEG,
+    ffmpegDrawtext: FFMPEG_DRAWTEXT,
     scraperProxy: Boolean(SCRAPER.apiUrl || SCRAPER.proxyUrl),
   });
 });

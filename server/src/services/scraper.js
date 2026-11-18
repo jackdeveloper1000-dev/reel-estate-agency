@@ -275,8 +275,8 @@ async function fetchViaConfiguredProxy(url) {
       redirect: 'follow',
       signal: AbortSignal.timeout(45000),
     });
-    // ZenRows returns HTTP 422 (RESP001) when a protected page requires JS rendering – retry once with js_render=true
-    if (res.status === 422 && /zenrows\.com/i.test(apiTarget) && !/[?&]js_render=true/i.test(apiTarget)) {
+    // ZenRows returns HTTP 422 (RESP001) or 417/403 when a protected page requires JS rendering – retry once with js_render=true
+    if ([422, 417, 403].includes(res.status) && /zenrows\.com/i.test(apiTarget) && !/[?&]js_render=true/i.test(apiTarget)) {
       res = await fetch(`${apiTarget}&js_render=true`, {
         redirect: 'follow',
         signal: AbortSignal.timeout(65000),
@@ -305,7 +305,7 @@ function blockedError(status, fromProxy = false) {
   let msg;
   if (fromProxy && (status === 401 || status === 402)) {
     msg = `Scraper proxy authentication/quota error (HTTP ${status} – check SCRAPER_API_URL in server/.env). You can still paste the page HTML or upload the photos instead.`;
-  } else if (status === 403 || status === 429) {
+  } else if ([403, 406, 417, 429].includes(status)) {
     msg = `This website blocked automatic access (HTTP ${status}). You can paste the page HTML or upload the photos instead.`;
   } else {
     msg = `Could not open the listing (HTTP ${status}).`;
@@ -339,8 +339,8 @@ async function fetchText(url) {
     directErr = e;
   }
 
-  // Fallback to configured scraping API or HTTP proxy when blocked (403/429/503) or network error
-  if (hasProxy && (directErr || [403, 429, 503].includes(directStatus))) {
+  // Fallback to configured scraping API or HTTP proxy when blocked (403/417/429/etc.) or network error
+  if (hasProxy && (directErr || (directStatus && directStatus !== 404))) {
     try {
       return await fetchViaConfiguredProxy(url);
     } catch (e) {
@@ -441,7 +441,7 @@ async function downloadImage(url, referer) {
   const headers = { 'User-Agent': UA, Referer: referer, Accept: 'image/webp,image/jpeg,image/png,image/*;q=0.8' };
   const res = await fetch(url, { signal: AbortSignal.timeout(20000), headers });
   if (res.ok) return Buffer.from(await res.arrayBuffer());
-  if (SCRAPER.proxyUrl && [403, 429].includes(res.status)) {
+  if (SCRAPER.proxyUrl && [403, 417, 429].includes(res.status)) {
     const proxied = await fetchViaHttpProxy(url, SCRAPER.proxyUrl, headers, 25000);
     if (proxied.ok) return proxied.buffer;
   }

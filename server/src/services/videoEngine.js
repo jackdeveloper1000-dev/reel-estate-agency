@@ -10,7 +10,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
-const { FFMPEG, SERVER_ROOT } = require('../config');
+const { FFMPEG, FFMPEG_DRAWTEXT, SERVER_ROOT } = require('../config');
 
 const FPS = 30;
 const GOLD = '0xD4AF37';
@@ -125,7 +125,7 @@ async function renderEndCard({ input, out, w, h, seconds, details, workDir }) {
   const u = Math.min(w, h) / 1080; // type scale unit
   const lines = [];
   const add = (name, text, font, size, color, y, start) => {
-    if (!text) return;
+    if (!text || !FFMPEG_DRAWTEXT) return;
     const tf = writeText(workDir, name, text);
     lines.push(drawText({ textFile: tf, font, size: fit(text, size * u, w), color, y, alpha: fadeAlpha(start, seconds + 1, 0.7), shadow: false }));
   };
@@ -230,15 +230,17 @@ async function renderVideoInner({ images, details = {}, settings = {}, workDir, 
     const bar = Math.round((h - w / 2.39) / 2);
     post.push(`drawbox=x=0:y=0:w=iw:h=${bar}:color=black:t=fill`, `drawbox=x=0:y=ih-${bar}:w=iw:h=${bar}:color=black:t=fill`);
   }
-  const titleEnd = Math.min(shotSec * 1.6, total - endSec - 0.5);
-  const kicker = details.kicker || 'NOW SHOWING';
-  const tKick = writeText(workDir, 'title_kicker.txt', kicker.toUpperCase());
-  const tAddr = details.address ? writeText(workDir, 'title_addr.txt', details.address) : null;
-  const tPrice = details.price ? writeText(workDir, 'title_price.txt', details.price) : null;
-  const baseY = h > w ? h * 0.66 : h * 0.62;
-  post.push(drawText({ textFile: tKick, font: 'Poppins-Light.ttf', size: 30 * u, color: GOLD, y: `${baseY - 70 * u}`, alpha: fadeAlpha(0.5, titleEnd) }));
-  if (tAddr) post.push(drawText({ textFile: tAddr, font: 'Lora-Variable.ttf', size: fit(details.address, (h > w ? 64 : 72) * u, w), color: 'white', y: `${baseY - 20 * u}`, alpha: fadeAlpha(0.8, titleEnd) }));
-  if (tPrice) post.push(drawText({ textFile: tPrice, font: 'Poppins-Medium.ttf', size: 38 * u, color: GOLD, y: `${baseY + 80 * u}`, alpha: fadeAlpha(1.1, titleEnd) }));
+  if (FFMPEG_DRAWTEXT) {
+    const titleEnd = Math.min(shotSec * 1.6, total - endSec - 0.5);
+    const kicker = details.kicker || 'NOW SHOWING';
+    const tKick = writeText(workDir, 'title_kicker.txt', kicker.toUpperCase());
+    const tAddr = details.address ? writeText(workDir, 'title_addr.txt', details.address) : null;
+    const tPrice = details.price ? writeText(workDir, 'title_price.txt', details.price) : null;
+    const baseY = h > w ? h * 0.66 : h * 0.62;
+    post.push(drawText({ textFile: tKick, font: 'Poppins-Light.ttf', size: 30 * u, color: GOLD, y: `${baseY - 70 * u}`, alpha: fadeAlpha(0.5, titleEnd) }));
+    if (tAddr) post.push(drawText({ textFile: tAddr, font: 'Lora-Variable.ttf', size: fit(details.address, (h > w ? 64 : 72) * u, w), color: 'white', y: `${baseY - 20 * u}`, alpha: fadeAlpha(0.8, titleEnd) }));
+    if (tPrice) post.push(drawText({ textFile: tPrice, font: 'Poppins-Medium.ttf', size: 38 * u, color: GOLD, y: `${baseY + 80 * u}`, alpha: fadeAlpha(1.1, titleEnd) }));
+  }
   post.push(`fade=t=in:st=0:d=0.8`, `fade=t=out:st=${(total - 0.8).toFixed(2)}:d=0.8`, 'format=yuv420p');
   filters.push(`${last}${post.join(',')}[vout]`);
 
