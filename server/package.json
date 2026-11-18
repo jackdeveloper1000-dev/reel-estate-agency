@@ -1,0 +1,22 @@
+{
+  "name": "realassets-ai-server",
+  "version": "1.0.0",
+  "description": "RealAssets AI \u2013 cinematic real estate video generator (API, MySQL)",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch-path=src src/index.js"
+  },
+  "engines": {
+    "node": ">=18.17"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1",
+    "ffmpeg-static": "^5.2.0",
+    "multer": "^1.4.5-lts.1",
+    "mysql2": "^3.11.4"
+  }
+}
