@@ -11,16 +11,43 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const { FFMPEG, FFMPEG_DRAWTEXT, SERVER_ROOT } = require('../config');
+const imageInfo = require('../utils/imageInfo');
 
 const FPS = 30;
 const GOLD = '0xD4AF37';
 const FONT_DIR = path.join(SERVER_ROOT, 'assets', 'fonts');
 
 const FORMATS = {
-  '16:9': { w: 1920, h: 1080 },
-  '9:16': { w: 1080, h: 1920 },
-  '1:1': { w: 1080, h: 1080 },
+  '16:9': { w: 1920, h: 1080, name: 'Landscape (16:9)' },
+  '9:16': { w: 1080, h: 1920, name: 'Vertical (9:16)' },
+  '4:5': { w: 1080, h: 1350, name: 'Portrait (4:5)' },
+  '1:1': { w: 1080, h: 1080, name: 'Square (1:1)' },
+  '4:3': { w: 1440, h: 1080, name: 'Classic (4:3)' },
+  '21:9': { w: 2560, h: 1080, name: 'Cinematic Ultrawide (21:9)' },
 };
+
+function detectAutoFormat(images) {
+  let totalRatio = 0;
+  let count = 0;
+  for (const img of images) {
+    try {
+      const buf = fs.readFileSync(img);
+      const info = imageInfo(buf);
+      if (info && info.width && info.height) {
+        totalRatio += info.width / info.height;
+        count++;
+      }
+    } catch (_) {}
+  }
+  if (!count) return '16:9';
+  const avg = totalRatio / count;
+  if (avg >= 2.0) return '21:9';
+  if (avg >= 1.45) return '16:9';
+  if (avg >= 1.18) return '4:3';
+  if (avg >= 0.88) return '1:1';
+  if (avg >= 0.68) return '4:5';
+  return '9:16';
+}
 
 const TRANSITIONS = {
   cinematic: ['fade', 'dissolve', 'smoothleft', 'fadeblack', 'smoothup', 'circleopen', 'fade', 'smoothright'],
@@ -100,23 +127,81 @@ function writeText(dir, name, text) {
   return f;
 }
 
-/** Render one photo into a moving shot. */
-async function renderShot({ input, out, w, h, seconds, move, grade, zoom }) {
+/** Render one photo into a moving shot with smart image framing. */
+async function renderShot({ input, out, w, h, seconds, move, grade, zoom, fitMode = 'auto' }) {
   const frames = Math.round(seconds * FPS);
   const E = `((1-cos(PI*on/${frames}))/2)`;
   const m = MOVES[move];
   const expr = (s) => s.replace(/E/g, E).replace(/Z/g, String(zoom));
   const W2 = w * 2;
   const H2 = h * 2;
-  const vf = [
-    `scale=${W2}:${H2}:force_original_aspect_ratio=increase:flags=lanczos`,
-    `crop=${W2}:${H2}`,
-    `zoompan=z='${expr(m.z)}':x='${expr(m.x)}':y='${expr(m.y)}':d=${frames}:s=${w}x${h}:fps=${FPS}`,
-    GRADES[grade] || GRADES.golden,
-    'setsar=1',
-    'format=yuv420p',
-  ].join(',');
-  await run(['-i', input, '-vf', vf, '-frames:v', String(frames), '-r', String(FPS), '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '16', '-an', out]);
+
+  // Read image dimensions to decide framing
+  let imgW = 0, imgH = 0;
+  try {
+    const buf = fs.readFileSync(input);
+    const info = imageInfo(buf);
+    if (info && info.width && info.height) {
+      imgW = info.width;
+      imgH = info.height;
+    }
+  } catch (_) {}
+
+  const targetRatio = w / h;
+  const imgRatio = (imgW > 0 && imgH > 0) ? (imgW / imgH) : targetRatio;
+  const ratioDiff = Math.abs(imgRatio - targetRatio) / targetRatio;
+
+  // If fitMode is 'blur_pad' or (fitMode is 'auto' and ratio differs significantly, e.g. portrait in landscape or vice versa)
+  const useBlurPad = fitMode === 'blur_pad' || (fitMode === 'auto' && ratioDiff > 0.32);
+  const useLetterbox = fitMode === 'letterbox';
+
+  let args;
+  if (useBlurPad) {
+    const filter = [
+      'split[bg][fg]',
+      `[bg]scale=${W2}:${H2}:force_original_aspect_ratio=increase,crop=${W2}:${H2},boxblur=30:2,eq=brightness=-0.32:saturation=0.8[bgp]`,
+      `[fg]scale=${W2}:${H2}:force_original_aspect_ratio=decrease[fgp]`,
+      `[bgp][fgp]overlay=(W-w)/2:(H-h)/2,setsar=1[framed]`,
+      `[framed]zoompan=z='${expr(m.z)}':x='${expr(m.x)}':y='${expr(m.y)}':d=${frames}:s=${w}x${h}:fps=${FPS},${GRADES[grade] || GRADES.golden},setsar=1,format=yuv420p[out]`
+    ].join(';');
+
+    args = [
+      '-i', input,
+      '-filter_complex', filter,
+      '-map', '[out]',
+      '-frames:v', String(frames),
+      '-r', String(FPS),
+      '-c:v', 'libx264',
+      '-preset', 'veryfast',
+      '-crf', '16',
+      '-an',
+      out
+    ];
+  } else if (useLetterbox) {
+    const vf = [
+      `scale=${W2}:${H2}:force_original_aspect_ratio=decrease`,
+      `pad=${W2}:${H2}:(ow-iw)/2:(oh-ih)/2:black`,
+      `zoompan=z='${expr(m.z)}':x='${expr(m.x)}':y='${expr(m.y)}':d=${frames}:s=${w}x${h}:fps=${FPS}`,
+      GRADES[grade] || GRADES.golden,
+      'setsar=1',
+      'format=yuv420p',
+    ].join(',');
+
+    args = ['-i', input, '-vf', vf, '-frames:v', String(frames), '-r', String(FPS), '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '16', '-an', out];
+  } else {
+    const vf = [
+      `scale=${W2}:${H2}:force_original_aspect_ratio=increase:flags=lanczos`,
+      `crop=${W2}:${H2}`,
+      `zoompan=z='${expr(m.z)}':x='${expr(m.x)}':y='${expr(m.y)}':d=${frames}:s=${w}x${h}:fps=${FPS}`,
+      GRADES[grade] || GRADES.golden,
+      'setsar=1',
+      'format=yuv420p',
+    ].join(',');
+
+    args = ['-i', input, '-vf', vf, '-frames:v', String(frames), '-r', String(FPS), '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '16', '-an', out];
+  }
+
+  await run(args);
 }
 
 /** Branded end card: blurred final photo + agent details. */
@@ -130,11 +215,21 @@ async function renderEndCard({ input, out, w, h, seconds, details, workDir }) {
     lines.push(drawText({ textFile: tf, font, size: fit(text, size * u, w), color, y, alpha: fadeAlpha(start, seconds + 1, 0.7), shadow: false }));
   };
   const cy = h / 2;
-  add('end_cta.txt', (details.cta || 'Book your private inspection').toUpperCase(), 'Poppins-Light.ttf', 30, GOLD, `${cy - 190 * u}`, 0.2);
-  add('end_agent.txt', details.agentName, 'Lora-Variable.ttf', 78, 'white', `${cy - 110 * u}`, 0.4);
-  add('end_agency.txt', details.agency, 'Poppins-Light.ttf', 34, '0xE8E2D0', `${cy + 5 * u}`, 0.6);
-  add('end_phone.txt', details.agentPhone, 'Poppins-Medium.ttf', 52, GOLD, `${cy + 75 * u}`, 0.8);
-  add('end_addr.txt', details.address, 'Poppins-Light.ttf', 28, '0xBBBBBB', `${cy + 170 * u}`, 1.0);
+  if (details.cta && details.cta.trim()) {
+    add('end_cta.txt', details.cta.trim().toUpperCase(), 'Poppins-Light.ttf', 30, GOLD, `${cy - 190 * u}`, 0.2);
+  }
+  if (details.agentName && details.agentName.trim()) {
+    add('end_agent.txt', details.agentName.trim(), 'Lora-Variable.ttf', 78, 'white', `${cy - 110 * u}`, 0.4);
+  }
+  if (details.agency && details.agency.trim()) {
+    add('end_agency.txt', details.agency.trim(), 'Poppins-Light.ttf', 34, '0xE8E2D0', `${cy + 5 * u}`, 0.6);
+  }
+  if (details.agentPhone && details.agentPhone.trim()) {
+    add('end_phone.txt', details.agentPhone.trim(), 'Poppins-Medium.ttf', 52, GOLD, `${cy + 75 * u}`, 0.8);
+  }
+  if (details.address && details.address.trim()) {
+    add('end_addr.txt', details.address.trim(), 'Poppins-Light.ttf', 28, '0xBBBBBB', `${cy + 170 * u}`, 1.0);
+  }
 
   const lineW = Math.round(220 * u);
   const vf = [
@@ -176,40 +271,52 @@ async function renderVideo(opts) {
 }
 
 async function renderVideoInner({ images, details = {}, settings = {}, workDir, outFile, musicFile, onProgress = () => {} }) {
-  const fmt = FORMATS[settings.format] || FORMATS['16:9'];
+  const chosenFormat = (settings.format === 'auto' || !FORMATS[settings.format])
+    ? detectAutoFormat(images)
+    : settings.format;
+  const fmt = FORMATS[chosenFormat] || FORMATS['16:9'];
   const { w, h } = fmt;
+  const fitMode = settings.imageFit || 'auto';
   const shotSec = Math.max(2.5, Math.min(7, Number(settings.secondsPerShot) || 4));
   const trans = Math.min(1.2, shotSec / 3.2);
   const grade = GRADES[settings.grade] ? settings.grade : 'golden';
   const pool = TRANSITIONS[settings.transition] || TRANSITIONS.cinematic;
   const zoom = settings.motion === 'subtle' ? 0.1 : settings.motion === 'bold' ? 0.26 : 0.17;
-  const endSec = details.agentName || details.agentPhone || details.agency ? 4.5 : 3;
+  const hasGreeting = Boolean(
+    (details.cta && details.cta.trim()) ||
+    (details.agentName && details.agentName.trim()) ||
+    (details.agentPhone && details.agentPhone.trim()) ||
+    (details.agency && details.agency.trim())
+  );
+  const endSec = hasGreeting && (details.agentName || details.agentPhone || details.agency) ? 4.5 : 3;
   const seq = h > w ? PORTRAIT_SEQ : LANDSCAPE_SEQ;
 
   if (!images.length) throw new Error('Select at least one photo.');
   fs.mkdirSync(workDir, { recursive: true });
 
-  // Weighted progress: shots 65%, end card 5%, final mux 30%
+  // Weighted progress: shots 65% (or 70% if no end card), end card 5%, final mux 30%
   const report = (p, label) => onProgress(Math.round(p * 100), label);
 
   // 1. Shots
   const shots = [];
   for (let i = 0; i < images.length; i++) {
-    report((i / images.length) * 0.65, `Filming shot ${i + 1} of ${images.length}`);
+    report((i / images.length) * (hasGreeting ? 0.65 : 0.7), `Filming shot ${i + 1} of ${images.length}`);
     const out = path.join(workDir, `shot_${String(i).padStart(2, '0')}.mp4`);
-    await renderShot({ input: images[i], out, w, h, seconds: shotSec, move: seq[i % seq.length], grade, zoom });
+    await renderShot({ input: images[i], out, w, h, seconds: shotSec, move: seq[i % seq.length], grade, zoom, fitMode });
     shots.push(out);
   }
 
-  // 2. End card
-  report(0.66, 'Designing end card');
-  const endOut = path.join(workDir, 'endcard.mp4');
-  await renderEndCard({ input: images[images.length - 1], out: endOut, w, h, seconds: endSec, details, workDir });
-  shots.push(endOut);
+  // 2. End card (only if greeting / agent info is available)
+  if (hasGreeting) {
+    report(0.66, 'Designing end card');
+    const endOut = path.join(workDir, 'endcard.mp4');
+    await renderEndCard({ input: images[images.length - 1], out: endOut, w, h, seconds: endSec, details, workDir });
+    shots.push(endOut);
+  }
 
   // 3. Assemble
   report(0.7, 'Editing & colour finishing');
-  const durations = shots.map((_, i) => (i === shots.length - 1 ? endSec : shotSec));
+  const durations = shots.map((_, i) => (hasGreeting && i === shots.length - 1 ? endSec : shotSec));
   const total = durations.reduce((a, b) => a + b, 0) - trans * (shots.length - 1);
 
   const filters = [];
@@ -217,7 +324,8 @@ async function renderVideoInner({ images, details = {}, settings = {}, workDir, 
   let offset = 0;
   for (let i = 1; i < shots.length; i++) {
     offset += durations[i - 1] - trans;
-    const t = i === shots.length - 1 ? 'fadeblack' : pool[(i - 1) % pool.length];
+    const isLastTransition = i === shots.length - 1;
+    const t = (isLastTransition && hasGreeting) ? 'fadeblack' : pool[(i - 1) % pool.length];
     const label = `[x${i}]`;
     filters.push(`${last}[${i}:v]xfade=transition=${t}:duration=${trans.toFixed(3)}:offset=${offset.toFixed(3)}${label}`);
     last = label;
@@ -231,7 +339,8 @@ async function renderVideoInner({ images, details = {}, settings = {}, workDir, 
     post.push(`drawbox=x=0:y=0:w=iw:h=${bar}:color=black:t=fill`, `drawbox=x=0:y=ih-${bar}:w=iw:h=${bar}:color=black:t=fill`);
   }
   if (FFMPEG_DRAWTEXT) {
-    const titleEnd = Math.min(shotSec * 1.6, total - endSec - 0.5);
+    const endPadding = hasGreeting ? endSec : 0;
+    const titleEnd = Math.min(shotSec * 1.6, Math.max(shotSec * 0.8, total - endPadding - 0.5));
     const kicker = details.kicker || 'NOW SHOWING';
     const tKick = writeText(workDir, 'title_kicker.txt', kicker.toUpperCase());
     const tAddr = details.address ? writeText(workDir, 'title_addr.txt', details.address) : null;
@@ -288,4 +397,4 @@ async function renderVideoInner({ images, details = {}, settings = {}, workDir, 
   return { duration: total, width: w, height: h, poster: fs.existsSync(poster) ? poster : null };
 }
 
-module.exports = { renderVideo, FORMATS, TRANSITIONS, GRADES };
+module.exports = { renderVideo, FORMATS, TRANSITIONS, GRADES, detectAutoFormat };

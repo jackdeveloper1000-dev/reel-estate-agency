@@ -5,7 +5,21 @@ import { go } from '../router.js';
 import PayModal from './PayModal.jsx';
 
 const OPTIONS = {
-  format: [['16:9', 'Landscape 16:9'], ['9:16', 'Vertical 9:16'], ['1:1', 'Square 1:1']],
+  format: [
+    ['auto', 'Auto (Best fit for photos)'],
+    ['16:9', 'Landscape 16:9 (YouTube / Web)'],
+    ['9:16', 'Vertical 9:16 (Reels / TikTok)'],
+    ['4:5', 'Portrait 4:5 (Instagram Feed)'],
+    ['1:1', 'Square 1:1 (Feed posts)'],
+    ['4:3', 'Classic 4:3 (iPad / Tablet)'],
+    ['21:9', 'Cinematic 21:9 (Ultrawide)'],
+  ],
+  imageFit: [
+    ['auto', 'Auto framing (Smart crop / soft blur)'],
+    ['crop', 'Crop & fill (Cinematic zoom)'],
+    ['blur_pad', 'No crop (Blurred background)'],
+    ['letterbox', 'Fit entire image (Black bars)'],
+  ],
   transition: [['cinematic', 'Cinematic mix'], ['smooth', 'Soft dissolves'], ['dynamic', 'Dynamic slides'], ['dark', 'Dip to black']],
   grade: [['golden', 'Golden hour'], ['natural', 'Natural'], ['cool', 'Cool modern'], ['mono', 'Black & white']],
   motion: [['subtle', 'Subtle'], ['standard', 'Standard'], ['bold', 'Bold']],
@@ -353,6 +367,7 @@ export default function Studio({ id, onChange }) {
           <div className="panel" data-tab="style">
             <h3>Style</h3>
             <Select label="Format" k="format" settings={settings} setS={setS} disabled={busy} />
+            <Select label="Image framing" k="imageFit" settings={settings} setS={setS} disabled={busy} />
             <Select label="Transitions" k="transition" settings={settings} setS={setS} disabled={busy} />
             <Select label="Colour grade" k="grade" settings={settings} setS={setS} disabled={busy} />
             <Select label="Camera motion" k="motion" settings={settings} setS={setS} disabled={busy} />

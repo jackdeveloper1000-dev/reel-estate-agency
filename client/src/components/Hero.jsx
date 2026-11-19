@@ -3,16 +3,19 @@ import { api } from '../api.js';
 import { go } from '../router.js';
 
 const FORMATS = [
+  { v: 'auto', label: 'Auto size', sub: 'Matches photos' },
   { v: '16:9', label: 'Landscape', sub: 'YouTube · Web' },
   { v: '9:16', label: 'Vertical', sub: 'Reels · TikTok' },
+  { v: '4:5', label: 'Portrait', sub: 'Instagram Feed' },
   { v: '1:1', label: 'Square', sub: 'Feed posts' },
+  { v: '21:9', label: 'Cinema', sub: '21:9 Ultrawide' },
 ];
 
 const DRAFT = 'ra_draft_url';
 
 export default function Hero({ onCreated, user }) {
   const [url, setUrl] = useState(() => { try { return sessionStorage.getItem(DRAFT) || ''; } catch { return ''; } });
-  const [format, setFormat] = useState('16:9');
+  const [format, setFormat] = useState('auto');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const fileRef = useRef(null);

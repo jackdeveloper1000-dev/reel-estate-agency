@@ -11,17 +11,18 @@ const newId = () => crypto.randomBytes(12).toString('hex'); // 24 hex chars, sam
 const isValidId = (id) => /^[a-f0-9]{24}$/i.test(String(id || ''));
 
 const ENUMS = {
-  format: ['16:9', '9:16', '1:1'],
+  format: ['auto', '16:9', '9:16', '1:1', '4:5', '4:3', '21:9'],
+  imageFit: ['auto', 'crop', 'blur_pad', 'letterbox'],
   transition: ['cinematic', 'smooth', 'dynamic', 'dark'],
   grade: ['golden', 'natural', 'cool', 'mono'],
   motion: ['subtle', 'standard', 'bold'],
   music: ['ambient', 'upload', 'none'],
 };
 const DEFAULT_SETTINGS = {
-  format: '16:9', secondsPerShot: 4, transition: 'cinematic', grade: 'golden',
+  format: 'auto', imageFit: 'auto', secondsPerShot: 4, transition: 'cinematic', grade: 'golden',
   motion: 'standard', music: 'ambient', letterbox: true, maxShots: 12,
 };
-const DEFAULT_DETAILS = { kicker: 'Now Showing', cta: 'Book your private inspection' };
+const DEFAULT_DETAILS = { kicker: 'Now Showing' };
 const DETAIL_KEYS = ['title', 'address', 'price', 'description', 'kicker', 'agentName', 'agentPhone', 'agency', 'cta'];
 
 function cleanSettings(s = {}) {
