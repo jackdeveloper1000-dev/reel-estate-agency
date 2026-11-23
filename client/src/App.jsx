@@ -4,6 +4,7 @@ import Studio from './components/Studio.jsx';
 import Library from './components/Library.jsx';
 import Auth from './components/Auth.jsx';
 import Account from './components/Account.jsx';
+import AdSlot from './components/AdSlot.jsx';
 import { api } from './api.js';
 import { go } from './router.js';
 
@@ -78,6 +79,8 @@ export default function App() {
       <>
         <Hero user={user} onCreated={(p) => { refresh(); go(`project/${p.id}`); }} />
         {user && projects.length > 0 && <Library projects={projects.slice(0, 6)} onChange={refresh} compact />}
+        {/* Ads only on the home page – never on login, film-editing or payment screens */}
+        <AdSlot slot={import.meta.env.VITE_ADSENSE_SLOT_HOME} />
       </>
     );
   }
@@ -126,6 +129,11 @@ export default function App() {
       <footer className="footer">
         <span>© {new Date().getFullYear()} ESTAMOTION · PROPERTY IN MOTION</span>
         <span className="muted">Cinematic films from real listing photos – nothing added that isn’t there.</span>
+        <span className="footer-links">
+          <a href="/guides/">Guides</a>
+          <a href="/about.html">About &amp; contact</a>
+          <a href="/privacy.html">Privacy policy</a>
+        </span>
       </footer>
 
       {/* App-style bottom bar (phones) */}

@@ -122,3 +122,37 @@ reports `apiKey: valid / missing or invalid`. Set the matching key in:
 
 With `API_KEY` empty the check is off. Note: a key inside a website or app can be extracted by a determined
 user – it stops casual/bot access to the API; logins (OTP) and payments still protect each user's films.
+
+## 8. Google AdSense, Guides & AdMob (earning from ads)
+
+Everything is switched on from `client/.env` – nothing shows until the values are set.
+
+| Setting | What it does |
+|---|---|
+| `VITE_ADSENSE_CLIENT` | Your publisher ID (`ca-pub-…` or `pub-…`). Adds the AdSense script to the `<head>` of every page and writes `dist/ads.txt` and `dist/app-ads.txt` (for AdMob). |
+| `VITE_ADSENSE_SLOT_HOME` | Ad unit ID for the display ad under the home page hero (create it in AdSense after approval). |
+| `VITE_ADSENSE_SLOT_ARTICLE` | Optional ad unit for the Guides pages (uses the home slot when empty). |
+| `VITE_CONTACT_EMAIL` | Contact email shown on the About and Privacy pages. |
+| `VITE_SITE_URL` | Your live address, e.g. `https://estamotion.in` – writes `dist/sitemap.xml` (and links it from `robots.txt`). |
+
+Steps:
+
+1. Put the site online on your own domain (AdSense cannot review `localhost`).
+2. Sign up at https://adsense.google.com, add your domain and copy your `ca-pub-…` ID.
+3. Set `VITE_ADSENSE_CLIENT`, `VITE_CONTACT_EMAIL` and `VITE_SITE_URL` in `client/.env`, run `npm run build` and deploy.
+   Check `https://yourdomain/ads.txt`, `/guides/`, `/about.html` and `/privacy.html` open.
+4. In AdSense, tick “I’ve placed the code” and request review (takes days to a few weeks).
+   Submitting `https://yourdomain/sitemap.xml` in Google Search Console helps Google find the guides.
+5. After approval: **Ads → By ad unit → Display ads**, copy the `data-ad-slot` number into `VITE_ADSENSE_SLOT_HOME`, rebuild and deploy.
+
+Ads appear only on the home page (`client/src/components/AdSlot.jsx`) and in the guides – never on login, film-editing or
+payment screens. Leave **Auto ads** off in AdSense, or it will place ads on those screens too.
+
+**Static pages** – About (`client/about.html`), Privacy (`client/privacy.html`) and the Guides (`client/guides/*.html`)
+are plain HTML so Google can read them without running the app. They share the header, footer and guide list in
+`client/partials/`. To add a guide: copy one of the files in `client/guides/`, change the text, and add a line for it to
+`client/partials/more-guides.html` – the build picks up every `.html` file in `client/guides/` automatically.
+The privacy policy includes the cookie and AdMob disclosures Google requires – review it before going live.
+
+**Mobile app (AdMob)** – see `mobile/SETUP.md` section 8. Debug builds show Google's test ads; release builds use the
+IDs in `mobile/.env`.

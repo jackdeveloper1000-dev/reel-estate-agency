@@ -1,0 +1,67 @@
+/* About, Privacy and Guides pages (plain HTML, see client/partials) – uses the variables and header/footer from styles.css */
+.static-page main { max-width: 780px; }
+.page-nav { display: flex; align-items: center; gap: 18px; }
+.page-nav a:not(.btn) { color: var(--muted); text-decoration: none; font-size: 14px; }
+.page-nav a:not(.btn):hover { color: var(--text); }
+.page-nav .btn, .page-nav .btn:hover { color: #141005; text-decoration: none; padding: 7px 14px; }
+
+.page { padding: 64px 0 24px; line-height: 1.7; }
+.page h1 { font-family: var(--serif); font-size: clamp(32px, 5vw, 46px); font-weight: 600; line-height: 1.15; margin: 0 0 14px; }
+.page h2 { font-family: var(--serif); font-size: 22px; font-weight: 600; margin: 44px 0 8px; color: var(--gold-2); }
+.page p, .page li { color: #d9d3c4; font-size: 15.5px; }
+.page p { margin: 0 0 14px; }
+.page ul { margin: 0 0 14px; padding-left: 20px; }
+.page li { margin: 6px 0; }
+.page li::marker { color: var(--gold); }
+.page strong { color: var(--text); font-weight: 600; }
+.page .lead { font-size: 17px; color: var(--text); }
+.page .updated { color: var(--muted); font-size: 13px; margin-bottom: 28px; }
+
+.page .contact-card {
+  margin-top: 44px; padding: 22px 24px; border-radius: var(--radius);
+  border: 1px solid var(--line-2); background: linear-gradient(180deg, var(--panel), var(--bg-2));
+}
+.page .contact-card h2 { margin-top: 0; }
+.page .contact-card p:last-child { margin-bottom: 0; }
+
+.page h3 { font-size: 16.5px; font-weight: 600; margin: 26px 0 6px; color: var(--text); }
+.page ol { margin: 0 0 14px; padding-left: 22px; }
+.page ol li::marker { color: var(--gold); font-weight: 600; }
+.page .ad-slot { margin: 36px auto; }
+.page .tip {
+  margin: 22px 0; padding: 14px 18px; border-left: 3px solid var(--gold); border-radius: 0 10px 10px 0;
+  background: rgba(212, 175, 55, 0.06); color: #e6dfcd; font-size: 15px;
+}
+.page table { width: 100%; border-collapse: collapse; margin: 8px 0 18px; font-size: 14.5px; }
+.page th, .page td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; color: #d9d3c4; }
+.page th { color: var(--gold-2); font-weight: 600; font-size: 13px; letter-spacing: 0.4px; }
+
+/* Guides list (guides index + "More guides") */
+.guide-list { list-style: none; padding: 0 !important; margin: 0; display: grid; gap: 12px; }
+.guide-list li { margin: 0 !important; }
+.guide-list li::marker { content: none; }
+.guide-list a {
+  display: block; padding: 18px 20px; border-radius: var(--radius); text-decoration: none;
+  border: 1px solid var(--line); background: linear-gradient(180deg, var(--panel), var(--bg-2)); transition: border-color 0.2s, transform 0.2s;
+}
+.guide-list a:hover { border-color: var(--gold-3); transform: translateY(-2px); }
+.guide-list strong { display: block; font-family: var(--serif); font-size: 19px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.guide-list span { display: block; color: var(--muted); font-size: 14px; line-height: 1.55; }
+
+/* "Make your film" box at the end of each guide */
+.cta-card {
+  margin: 44px 0 0; padding: 26px 24px; text-align: center; border-radius: var(--radius);
+  border: 1px solid var(--gold-3); background: radial-gradient(600px 200px at 50% 0%, rgba(212, 175, 55, 0.12), transparent 70%), var(--panel);
+}
+.cta-card h2 { margin: 0 0 6px !important; }
+.cta-card p { margin: 0 0 16px !important; }
+.cta-card .btn { text-decoration: none; }
+
+@media (max-width: 760px) {
+  .static-page main { padding-bottom: 48px; }
+  .static-page .footer { display: flex; padding: 20px 16px; }
+  .page { padding-top: 40px; }
+  .page-nav a:not(.btn) { display: none; }
+  .page table { font-size: 13.5px; }
+  .page th, .page td { padding: 8px 6px; }
+}

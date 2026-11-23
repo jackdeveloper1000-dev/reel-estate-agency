@@ -127,6 +127,10 @@ export default function Hero({ onCreated, user }) {
         <li><span>02</span><div><strong>Make the film</strong><p>Choose photos &amp; style, then camera moves, grade, titles &amp; score are added.</p></div></li>
         <li><span>03</span><div><strong>Download &amp; post</strong><p>Full-HD MP4 ready for portals and socials.</p></div></li>
       </ol>
+
+      <p className="guides-note">
+        New to property videos? Read our <a href="/guides/">free guides</a> – photo tips, Reels ideas, video sizes and music.
+      </p>
     </section>
   );
 }
