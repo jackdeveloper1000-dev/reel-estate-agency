@@ -21,6 +21,7 @@ function pageInputs() {
     main: resolve(here, 'index.html'),
     about: resolve(here, 'about.html'),
     privacy: resolve(here, 'privacy.html'),
+    terms: resolve(here, 'terms.html'),
   };
   const guides = resolve(here, 'guides');
   if (existsSync(guides)) {

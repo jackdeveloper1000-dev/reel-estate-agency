@@ -20,7 +20,7 @@ const ENUMS = {
 };
 const DEFAULT_SETTINGS = {
   format: 'auto', imageFit: 'auto', secondsPerShot: 4, transition: 'cinematic', grade: 'golden',
-  motion: 'standard', music: 'ambient', letterbox: true, maxShots: 12,
+  motion: 'standard', music: 'ambient', letterbox: true, maxShots: 12, endCardImageId: '',
 };
 const DEFAULT_DETAILS = { kicker: 'Now Showing' };
 const DETAIL_KEYS = ['title', 'address', 'price', 'description', 'kicker', 'agentName', 'agentPhone', 'agency', 'cta'];
@@ -31,6 +31,7 @@ function cleanSettings(s = {}) {
   if (Number.isFinite(Number(s.secondsPerShot))) out.secondsPerShot = Number(s.secondsPerShot);
   if (Number.isFinite(Number(s.maxShots))) out.maxShots = Math.max(1, Math.round(Number(s.maxShots)));
   if (s.letterbox !== undefined) out.letterbox = !!s.letterbox;
+  if (typeof s.endCardImageId === 'string') out.endCardImageId = s.endCardImageId.trim().slice(0, 48);
   return out;
 }
 

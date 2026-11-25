@@ -10,7 +10,7 @@ const paymentRoutes = require('./routes/payments');
 const { loadUser } = require('./utils/session');
 const { apiKeyGuard, isValidKey } = require('./utils/apiKey');
 const { APP_SECRET, IS_PRODUCTION, PAYMENTS, SMS, API_KEYS } = require('./config');
-const { recoverInterrupted } = require('./services/jobs');
+const { recoverInterrupted, startRetentionSweeper } = require('./services/jobs');
 
 fs.mkdirSync(path.join(STORAGE_DIR, 'projects'), { recursive: true });
 
@@ -95,6 +95,7 @@ async function connectDb() {
     const version = await db.connect();
     console.log(`✔ MySQL connected (${version}) – database "${MYSQL.database}" on ${MYSQL.host}:${MYSQL.port}`);
     await recoverInterrupted();
+    startRetentionSweeper();
   } catch (err) {
     const hint =
       err.code === 'ECONNREFUSED' ? 'Is MySQL running? Start it in the XAMPP Control Panel.'

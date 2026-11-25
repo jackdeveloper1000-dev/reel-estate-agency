@@ -47,6 +47,8 @@ const SCHEMA = [
      name          VARCHAR(100) NOT NULL,
      phone         VARCHAR(20)  NOT NULL UNIQUE COMMENT 'E.164, e.g. +919876543210',
      is_active     TINYINT(1)   NOT NULL DEFAULT 1,
+     brand_kit     LONGTEXT     NULL COMMENT 'JSON: agentName, agentPhone, agency, cta',
+     terms_accepted_at DATETIME NULL,
      created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
      last_login_at DATETIME     NULL
    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=${COLLATION}`,
@@ -87,6 +89,17 @@ async function migrate(pool) {
   const have = new Set(cols.map((c) => c.COLUMN_NAME));
   if (!have.has('user_id')) {
     await pool.query('ALTER TABLE projects ADD COLUMN user_id INT UNSIGNED NULL AFTER id, ADD INDEX idx_projects_user (user_id)');
+  }
+
+  const [userCols] = await pool.query(
+    `SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users'`
+  );
+  const haveUser = new Set(userCols.map((c) => c.COLUMN_NAME));
+  if (!haveUser.has('brand_kit')) {
+    await pool.query("ALTER TABLE users ADD COLUMN brand_kit LONGTEXT NULL COMMENT 'JSON: agentName, agentPhone, agency, cta' AFTER is_active");
+  }
+  if (!haveUser.has('terms_accepted_at')) {
+    await pool.query('ALTER TABLE users ADD COLUMN terms_accepted_at DATETIME NULL AFTER brand_kit');
   }
 
   // Align database + table/column collations to utf8mb4_general_ci (fixes MySQL 8 utf8mb4_0900_ai_ci mismatch)

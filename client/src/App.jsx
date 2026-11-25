@@ -7,6 +7,7 @@ import Account from './components/Account.jsx';
 import AdSlot from './components/AdSlot.jsx';
 import { api } from './api.js';
 import { go } from './router.js';
+import { clearPendingDraft, takePendingDraft } from './utils/studioOptions.js';
 
 function useHashRoute() {
   const read = () => window.location.hash.replace(/^#\/?/, '');
@@ -30,6 +31,7 @@ export default function App() {
   const [user, setUser] = useState(undefined); // undefined = loading, null = logged out
   const [projects, setProjects] = useState([]);
   const [health, setHealth] = useState(null);
+  const [resumingDraft, setResumingDraft] = useState(false);
 
   const refresh = useCallback(() => {
     if (!user) return Promise.resolve();
@@ -38,6 +40,7 @@ export default function App() {
 
   useEffect(() => {
     api.me().then((r) => setUser(r.user)).catch(() => setUser(null));
+    fetch('/api/health').then((r) => r.json()).then(setHealth).catch(() => setHealth({ ok: false }));
     const out = () => setUser(null);
     window.addEventListener('ra:logged-out', out);
     return () => window.removeEventListener('ra:logged-out', out);
@@ -45,31 +48,55 @@ export default function App() {
 
   useEffect(() => {
     if (user) refresh(); else setProjects([]);
-    fetch('/api/health').then((r) => r.json()).then(setHealth).catch(() => setHealth({ ok: false }));
-  }, [refresh, route, user]);
+  }, [refresh, user]);
 
-  // already logged in → leave the login page
-  useEffect(() => { if (user && (route === 'login' || route === 'signup')) go('films'); }, [user, route]);
+  // already logged in → leave the login page (unless resuming a pending draft)
+  useEffect(() => {
+    if (user && !resumingDraft && (route === 'login' || route === 'signup')) go('films');
+  }, [user, route, resumingDraft]);
 
   const projectId = route.startsWith('project/') ? route.split('/')[1] : null;
   const section = projectId ? 'films' : route === 'films' ? 'films' : ['account', 'login', 'signup'].includes(route) ? 'account' : 'create';
   const needsLogin = !user && (projectId || route === 'films' || route === 'account');
 
-  const loggedIn = (u) => {
+  const loggedIn = async (u) => {
     setUser(u);
-    let draft = '';
-    try { draft = sessionStorage.getItem('ra_draft_url') || ''; } catch { /* ignore */ }
-    go(draft ? '' : 'films');
+    const draft = takePendingDraft();
+    if (!draft) {
+      go('films');
+      return;
+    }
+    setResumingDraft(true);
+    try {
+      const p = draft.type === 'files'
+        ? await api.createFromPhotos(draft.files, { format: draft.format || 'auto' })
+        : await api.createFromUrl(draft.url, { format: draft.format || 'auto' }, false);
+      const list = await api.list().catch(() => []);
+      if (Array.isArray(list)) setProjects(list);
+      go(`project/${p.id}`);
+    } catch {
+      go('');
+    } finally {
+      setResumingDraft(false);
+    }
   };
+
   const logout = async () => {
     try { await api.logout(); } catch { /* ignore */ }
+    clearPendingDraft();
     setUser(null);
     go('');
   };
 
   let page;
-  if (user === undefined) page = <section className="studio loading"><span className="spinner big" /></section>;
-  else if (route === 'login' || route === 'signup' || needsLogin) {
+  if (user === undefined || resumingDraft) {
+    page = (
+      <section className="studio loading">
+        <span className="spinner big" />
+        {resumingDraft && <p className="muted">Starting your film project…</p>}
+      </section>
+    );
+  } else if (route === 'login' || route === 'signup' || needsLogin) {
     page = user ? null : <Auth mode={route === 'login' ? 'login' : 'signup'} onDone={loggedIn} />;
   } else if (projectId) page = <Studio key={projectId} id={projectId} onChange={refresh} />;
   else if (route === 'films') page = <Library projects={projects} onChange={refresh} />;
@@ -133,6 +160,7 @@ export default function App() {
           <a href="/guides/">Guides</a>
           <a href="/about.html">About &amp; contact</a>
           <a href="/privacy.html">Privacy policy</a>
+          <a href="/terms.html">Terms &amp; conditions</a>
         </span>
       </footer>
 

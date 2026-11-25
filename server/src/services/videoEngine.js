@@ -11,7 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const { FFMPEG, FFMPEG_DRAWTEXT, SERVER_ROOT } = require('../config');
-const imageInfo = require('../utils/imageInfo');
+const { imageInfo } = require('../utils/imageInfo');
 
 const FPS = 30;
 const GOLD = '0xD4AF37';
@@ -270,7 +270,7 @@ async function renderVideo(opts) {
   }
 }
 
-async function renderVideoInner({ images, details = {}, settings = {}, workDir, outFile, musicFile, onProgress = () => {} }) {
+async function renderVideoInner({ images, endCardImage = null, details = {}, settings = {}, workDir, outFile, musicFile, onProgress = () => {} }) {
   const chosenFormat = (settings.format === 'auto' || !FORMATS[settings.format])
     ? detectAutoFormat(images)
     : settings.format;
@@ -310,7 +310,8 @@ async function renderVideoInner({ images, details = {}, settings = {}, workDir, 
   if (hasGreeting) {
     report(0.66, 'Designing end card');
     const endOut = path.join(workDir, 'endcard.mp4');
-    await renderEndCard({ input: images[images.length - 1], out: endOut, w, h, seconds: endSec, details, workDir });
+    const endInput = endCardImage && fs.existsSync(endCardImage) ? endCardImage : images[images.length - 1];
+    await renderEndCard({ input: endInput, out: endOut, w, h, seconds: endSec, details, workDir });
     shots.push(endOut);
   }
 

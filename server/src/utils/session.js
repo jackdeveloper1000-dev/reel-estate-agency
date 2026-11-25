@@ -53,7 +53,22 @@ function clearSession(res) {
   res.clearCookie(COOKIE, { path: '/' });
 }
 
-/** Adds req.user ({ id, name, phone }) from the login cookie (website) or an
+const BRAND_KEYS = ['agentName', 'agentPhone', 'agency', 'cta'];
+
+function parseBrandKit(raw) {
+  let obj = raw;
+  if (typeof raw === 'string' && raw.trim()) {
+    try { obj = JSON.parse(raw); } catch { obj = {}; }
+  }
+  if (!obj || typeof obj !== 'object') obj = {};
+  const out = {};
+  for (const k of BRAND_KEYS) {
+    if (typeof obj[k] === 'string') out[k] = obj[k].trim().slice(0, 200);
+  }
+  return out;
+}
+
+/** Adds req.user ({ id, name, phone, brandKit }) from the login cookie (website) or an
  *  "Authorization: Bearer <token>" header (mobile app). */
 async function loadUser(req, _res, next) {
   try {
@@ -61,8 +76,8 @@ async function loadUser(req, _res, next) {
     const bearer = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
     const data = readToken(bearer || parseCookies(req.headers.cookie)[COOKIE]);
     if (data) {
-      const [[u]] = await getPool().query('SELECT id, name, phone, is_active FROM users WHERE id = ?', [data.uid]);
-      if (u && u.is_active) req.user = { id: u.id, name: u.name, phone: u.phone };
+      const [[u]] = await getPool().query('SELECT id, name, phone, is_active, brand_kit FROM users WHERE id = ?', [data.uid]);
+      if (u && u.is_active) req.user = { id: u.id, name: u.name, phone: u.phone, brandKit: parseBrandKit(u.brand_kit) };
     }
   } catch { /* not logged in */ }
   next();
@@ -73,4 +88,4 @@ function requireUser(req, res, next) {
   res.status(401).json({ error: 'Please log in to continue.', code: 'LOGIN_REQUIRED' });
 }
 
-module.exports = { setSession, clearSession, loadUser, requireUser, makeToken };
+module.exports = { setSession, clearSession, loadUser, requireUser, makeToken, parseBrandKit };

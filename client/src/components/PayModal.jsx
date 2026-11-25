@@ -76,7 +76,7 @@ export default function PayModal({ open, onClose, onPaid }) {
       <div className="sheet" role="dialog" aria-modal="true" aria-label="Payment" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-grip" aria-hidden />
         <h3>Make your film</h3>
-        <p className="muted">Your photos are ready. One payment makes one film – after it’s rendered, the photos are removed and the MP4 stays in My Films to download.</p>
+        <p className="muted">Your photos are ready. One payment makes one film – your MP4 stays in My Films to download anytime.</p>
         <ul className="pay-lines">
           <li><span>Cinematic property film (Full HD)</span><b>{price}</b></li>
           <li className="muted small"><span>MP4 download included</span><span>✓</span></li>
@@ -89,7 +89,10 @@ export default function PayModal({ open, onClose, onPaid }) {
           {busy ? <span className="spinner" /> : `Pay ${price}`}
         </button>
         <button className="btn btn-ghost block" onClick={onClose} disabled={busy}>Not now</button>
-        <p className="muted small center secure">🔒 Secure payment by Razorpay · UPI, cards, net banking & wallets</p>
+        <p className="muted small center secure">
+          <svg viewBox="0 0 24 24" className="inline-ico" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2" fill="none" stroke="currentColor" strokeWidth="1.8"/><path d="M8 11V7a4 4 0 0 1 8 0v4" fill="none" stroke="currentColor" strokeWidth="1.8"/></svg>
+          Secure payment by Razorpay · UPI, cards, net banking &amp; wallets
+        </p>
       </div>
     </div>
   );

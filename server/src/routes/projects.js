@@ -3,8 +3,9 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const multer = require('multer');
+const { SOURCE_RETENTION_DAYS } = require('../config');
 const Project = require('../models/Project');
-const { runScrape, runScrapeHtml, enqueueRender, cancelRender, projectDir } = require('../services/jobs');
+const { runScrape, runScrapeHtml, enqueueRender, cancelRender, removeSourceFiles, projectDir } = require('../services/jobs');
 const { imageInfo } = require('../utils/imageInfo');
 const { requireUser } = require('../utils/session');
 const { useCredit } = require('./payments');
@@ -34,6 +35,7 @@ function serialize(p) {
       ? { ...o.video, url: mediaUrl(o._id, o.video.file), posterUrl: mediaUrl(o._id, o.video.poster) }
       : null,
     musicFile: o.musicFile || null,
+    sourceRetentionDays: SOURCE_RETENTION_DAYS,
   };
 }
 
@@ -57,7 +59,12 @@ function isFinal(p, res) {
 
 /** New (unpaid) film for this user – importing photos is free, payment is taken at "Make Film". */
 async function newProject(req, data) {
-  return Project.build({ ...data, userId: req.user.id });
+  const brand = req.user?.brandKit || {};
+  const defaults = {};
+  for (const [k, v] of Object.entries(brand)) {
+    if (v) defaults[k] = v;
+  }
+  return Project.build({ ...data, details: { ...defaults, ...(data.details || {}) }, userId: req.user.id });
 }
 
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -277,6 +284,80 @@ router.post(
     p.status = 'scraping';
     p.error = null;
     res.json(serialize(p));
+  })
+);
+
+// Duplicate an existing project (e.g. export a 9:16 Reels cut from a finished 16:9 film)
+router.post(
+  '/:id/duplicate',
+  wrap(async (req, res) => {
+    const p = await load(req, res);
+    if (!p) return;
+    if (['scraping', 'queued', 'rendering'].includes(p.status)) {
+      return res.status(409).json({ error: 'Wait until processing finishes before duplicating this project.' });
+    }
+    const srcDir = projectDir(p._id);
+    const existingImages = p.images.filter((img) => img.file && fs.existsSync(path.join(srcDir, img.file)));
+    if (!existingImages.length) {
+      return res.status(400).json({ error: 'Source photos are no longer available for this film.' });
+    }
+
+    const nextSettings = { ...p.settings };
+    if (typeof req.body?.format === 'string' && req.body.format.trim()) nextSettings.format = req.body.format.trim();
+    if (typeof req.body?.imageFit === 'string' && req.body.imageFit.trim()) nextSettings.imageFit = req.body.imageFit.trim();
+
+    const copy = Project.build({
+      userId: req.user.id,
+      sourceUrl: p.sourceUrl,
+      source: p.source,
+      status: 'ready',
+      progress: 100,
+      stage: `${existingImages.length} photos ready`,
+      details: p.details,
+      settings: nextSettings,
+    });
+
+    const destDir = projectDir(copy._id);
+    fs.mkdirSync(destDir, { recursive: true });
+    const idMap = new Map();
+    for (const img of existingImages) {
+      const newImgId = Project.newId();
+      idMap.set(String(img._id), newImgId);
+      fs.copyFileSync(path.join(srcDir, img.file), path.join(destDir, img.file));
+      copy.images.push({
+        _id: newImgId,
+        file: img.file,
+        sourceUrl: img.sourceUrl,
+        width: img.width,
+        height: img.height,
+        selected: img.selected,
+      });
+    }
+    if (copy.settings.endCardImageId) {
+      copy.settings.endCardImageId = idMap.get(String(copy.settings.endCardImageId)) || '';
+    }
+    if (p.musicFile && fs.existsSync(path.join(srcDir, p.musicFile))) {
+      fs.copyFileSync(path.join(srcDir, p.musicFile), path.join(destDir, p.musicFile));
+      copy.musicFile = p.musicFile;
+    }
+
+    await Project.save(copy);
+    res.status(201).json(serialize(copy));
+  })
+);
+
+// Immediately purge source photos/music on a finished film
+router.delete(
+  '/:id/sources',
+  wrap(async (req, res) => {
+    const p = await load(req, res);
+    if (!p) return;
+    if (!p.video || !p.video.file) {
+      return res.status(409).json({ error: 'Only finished films can purge source photos.' });
+    }
+    await removeSourceFiles(p._id, projectDir(p._id), [p.video.file, p.video.poster || null]);
+    const fresh = await Project.findById(p._id);
+    res.json(serialize(fresh));
   })
 );
 

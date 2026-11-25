@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { api, BUSY } from '../api.js';
 import { go } from '../router.js';
-import { labelFor } from './Studio.jsx';
+import { labelFor, safeHost } from '../utils/studioOptions.js';
 
 export default function Library({ projects, onChange, compact }) {
   // keep statuses fresh while anything is processing
   const anyBusy = projects.some((p) => BUSY.includes(p.status));
   const [confirmId, setConfirmId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const [error, setError] = useState('');
 
   const del = async (e, id) => {
     e.stopPropagation();
@@ -16,8 +17,9 @@ export default function Library({ projects, onChange, compact }) {
       setTimeout(() => setConfirmId((c) => (c === id ? null : c)), 4000);
       return;
     }
+    setError('');
     setDeletingId(id);
-    try { await api.remove(id); } catch (err) { alertSafe(err.message); }
+    try { await api.remove(id); } catch (err) { setError(err.message); }
     setDeletingId(null);
     setConfirmId(null);
     onChange && onChange();
@@ -34,6 +36,7 @@ export default function Library({ projects, onChange, compact }) {
         <h2>{compact ? 'Recent films' : 'My films'}</h2>
         {compact && projects.length > 0 && <button className="link" onClick={() => go('films')}>View all →</button>}
       </div>
+      {error && <p className="error top-error">{error}</p>}
       {!projects.length ? (
         <div className="empty-lib">
           <p>No films yet.</p>
@@ -66,7 +69,7 @@ export default function Library({ projects, onChange, compact }) {
                   <div className="card-meta">
                     <span className={`badge s-${p.status}`}>{labelFor(p.status)}</span>
                     <span className="muted small">
-                      {p.settings?.format} · {p.video ? `${Math.round(p.video.duration || 0)}s film` : `${p.images?.filter((i) => i.selected).length || 0} shots`}
+                      {p.settings?.format === 'auto' ? 'Auto size' : p.settings?.format} · {p.video ? `${Math.round(p.video.duration || 0)}s film` : `${p.images?.filter((i) => i.selected).length || 0} shots`}
                     </span>
                   </div>
                 </div>
@@ -77,12 +80,4 @@ export default function Library({ projects, onChange, compact }) {
       )}
     </section>
   );
-}
-
-function alertSafe(msg) {
-  try { window.alert(msg); } catch { console.error(msg); }
-}
-
-function safeHost(u) {
-  try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return u; }
 }

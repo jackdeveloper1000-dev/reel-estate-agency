@@ -51,6 +51,7 @@ module.exports = {
     database: process.env.MYSQL_DATABASE || 'realassets_ai',
   },
   STORAGE_DIR: path.resolve(SERVER_ROOT, process.env.STORAGE_DIR || 'storage'),
+  SOURCE_RETENTION_DAYS: Math.max(0, Number(process.env.SOURCE_RETENTION_DAYS ?? 7)),
   CLIENT_ORIGIN: process.env.CLIENT_ORIGIN || 'http://localhost:5180',
   FFMPEG: ffmpegInfo.bin,
   FFMPEG_DRAWTEXT: ffmpegInfo.drawtext,

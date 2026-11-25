@@ -2,10 +2,25 @@ import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { go } from '../router.js';
 
+const BRAND_FIELDS = [
+  ['agentName', 'Default agent / creator name', 'Ananya Mehta'],
+  ['agentPhone', 'Default agent phone', '+91 98765 43210'],
+  ['agency', 'Agency / brand name', 'Gold Realty'],
+  ['cta', 'Default end card greeting', 'Book your private inspection'],
+];
+
 export default function Account({ user, onUser, onLogout, filmCount }) {
   const [name, setName] = useState(user.name);
+  const [brandKit, setBrandKit] = useState(() => ({
+    agentName: user.brandKit?.agentName || '',
+    agentPhone: user.brandKit?.agentPhone || '',
+    agency: user.brandKit?.agency || '',
+    cta: user.brandKit?.cta || '',
+  }));
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
+  const [savingBrand, setSavingBrand] = useState(false);
+  const [brandMsg, setBrandMsg] = useState('');
   const [summary, setSummary] = useState(null);
   const [payments, setPayments] = useState([]);
 
@@ -19,13 +34,28 @@ export default function Account({ user, onUser, onLogout, filmCount }) {
     setSaving(true);
     setMsg('');
     try {
-      const r = await api.updateMe(name);
+      const r = await api.updateMe({ name });
       onUser(r.user);
       setMsg('Saved ✓');
     } catch (err) {
       setMsg(err.message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const saveBrand = async (e) => {
+    e.preventDefault();
+    setSavingBrand(true);
+    setBrandMsg('');
+    try {
+      const r = await api.updateMe({ brandKit });
+      onUser(r.user);
+      setBrandMsg('Brand kit saved ✓');
+    } catch (err) {
+      setBrandMsg(err.message);
+    } finally {
+      setSavingBrand(false);
     }
   };
 
@@ -67,6 +97,29 @@ export default function Account({ user, onUser, onLogout, filmCount }) {
           <div className="row">
             <button className="btn btn-gold sm" disabled={saving || name.trim() === user.name}>Save</button>
             {msg && <span className="muted small">{msg}</span>}
+          </div>
+        </form>
+      </div>
+
+      <div className="panel">
+        <h3>Agent Brand Kit</h3>
+        <p className="muted small brand-kit-note">Auto-filled on every new film’s end card so you don’t have to re-type your details.</p>
+        <form onSubmit={saveBrand}>
+          {BRAND_FIELDS.map(([k, lbl, ph]) => (
+            <label key={k} className="field">
+              <span>{lbl}</span>
+              <input
+                value={brandKit[k] || ''}
+                placeholder={ph}
+                onChange={(e) => setBrandKit((b) => ({ ...b, [k]: e.target.value }))}
+              />
+            </label>
+          ))}
+          <div className="row">
+            <button className="btn btn-gold sm" disabled={savingBrand}>
+              {savingBrand ? 'Saving…' : 'Save Brand Kit'}
+            </button>
+            {brandMsg && <span className="muted small">{brandMsg}</span>}
           </div>
         </form>
       </div>

@@ -7,7 +7,7 @@ const path = require('path');
 const Project = require('../models/Project');
 const { scrapeListing, scrapeHtml } = require('./scraper');
 const { renderVideo } = require('./videoEngine');
-const { STORAGE_DIR } = require('../config');
+const { STORAGE_DIR, SOURCE_RETENTION_DAYS } = require('../config');
 
 const projectDir = (id) => path.join(STORAGE_DIR, 'projects', String(id));
 
@@ -114,6 +114,10 @@ async function renderProject(id, signal) {
   const dir = projectDir(id);
   const workDir = path.join(dir, 'work');
   const selected = project.images.filter((i) => i.selected).map((i) => path.join(dir, i.file)).filter((f) => fs.existsSync(f));
+  const endCardRow = project.settings?.endCardImageId
+    ? project.images.find((i) => String(i._id) === String(project.settings.endCardImageId))
+    : null;
+  const endCardImage = endCardRow ? path.join(dir, endCardRow.file) : null;
 
   try {
     if (!selected.length) throw new Error('Select at least one photo before generating.');
@@ -127,6 +131,7 @@ async function renderProject(id, signal) {
 
     const result = await renderVideo({
       images: selected,
+      endCardImage,
       details: plain.details || {},
       settings: plain.settings || {},
       musicFile: project.musicFile ? path.join(dir, project.musicFile) : null,
@@ -161,8 +166,11 @@ async function renderProject(id, signal) {
         renderedAt: new Date(),
       },
     });
-    // Film is final: delete the photos (and uploaded music) – only the video and its poster are kept
-    await removeSourceFiles(id, dir, [outName, result.poster ? path.basename(result.poster) : null]);
+    // If immediate deletion is configured (SOURCE_RETENTION_DAYS === 0), clean source files now;
+    // otherwise keep them for SOURCE_RETENTION_DAYS so the user can export additional aspect formats.
+    if (SOURCE_RETENTION_DAYS === 0) {
+      await removeSourceFiles(id, dir, [outName, result.poster ? path.basename(result.poster) : null]);
+    }
     notifyFilmReady(project).catch((e) => console.warn('[sms] film-ready message failed:', e.message));
   } catch (err) {
     if (signal && signal.aborted) return; // project is being deleted
@@ -201,4 +209,44 @@ async function recoverInterrupted() {
   await Project.recoverInterrupted();
 }
 
-module.exports = { runScrape, runScrapeHtml, enqueueRender, cancelRender, recoverInterrupted, projectDir };
+/** Purge source photos/music on finished films older than SOURCE_RETENTION_DAYS. */
+async function purgeExpiredSources() {
+  if (SOURCE_RETENTION_DAYS <= 0) return;
+  const { getPool } = require('../db');
+  const db = getPool();
+  const [rows] = await db.query(
+    `SELECT p.id, p.video FROM projects p
+      WHERE p.status = 'done'
+        AND p.updated_at < NOW() - INTERVAL ? DAY
+        AND (p.music_file IS NOT NULL OR EXISTS (SELECT 1 FROM project_images pi WHERE pi.project_id = p.id))
+      LIMIT 50`,
+    [SOURCE_RETENTION_DAYS]
+  );
+  for (const row of rows) {
+    let v = null;
+    try { v = typeof row.video === 'string' ? JSON.parse(row.video) : row.video; } catch { /* ignore */ }
+    if (!v || !v.file) continue;
+    await removeSourceFiles(row.id, projectDir(row.id), [v.file, v.poster || null]);
+  }
+}
+
+let sweeperTimer = null;
+function startRetentionSweeper() {
+  if (SOURCE_RETENTION_DAYS <= 0 || sweeperTimer) return;
+  purgeExpiredSources().catch((e) => console.warn('[retention]', e.message));
+  sweeperTimer = setInterval(() => {
+    purgeExpiredSources().catch((e) => console.warn('[retention]', e.message));
+  }, 6 * 3600 * 1000);
+  if (sweeperTimer.unref) sweeperTimer.unref();
+}
+
+module.exports = {
+  runScrape,
+  runScrapeHtml,
+  enqueueRender,
+  cancelRender,
+  recoverInterrupted,
+  removeSourceFiles,
+  startRetentionSweeper,
+  projectDir,
+};

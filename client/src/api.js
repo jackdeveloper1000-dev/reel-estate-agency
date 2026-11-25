@@ -45,15 +45,18 @@ export const api = {
     return request(`/projects/${id}/music`, { method: 'POST', body: fd });
   },
   update: (id, body) => request(`/projects/${id}`, json('PATCH', body)),
+  duplicate: (id, body) => request(`/projects/${id}/duplicate`, json('POST', body)),
+  purgeSources: (id) => request(`/projects/${id}/sources`, { method: 'DELETE' }),
   render: (id) => request(`/projects/${id}/render`, json('POST')),
   retry: (id) => request(`/projects/${id}/retry`, json('POST')),
   remove: (id) => request(`/projects/${id}`, { method: 'DELETE' }),
 
   // account
   me: () => request('/auth/me'),
-  sendOtp: (phone, purpose, name) => request('/auth/otp', json('POST', { phone, purpose, name })),
+  sendOtp: (phone, purpose, name, acceptedTerms = false) =>
+    request('/auth/otp', json('POST', { phone, purpose, name, acceptedTerms })),
   verifyOtp: (phone, code) => request('/auth/verify', json('POST', { phone, code })),
-  updateMe: (name) => request('/auth/me', json('PATCH', { name })),
+  updateMe: (data) => request('/auth/me', json('PATCH', typeof data === 'string' ? { name: data } : data)),
   logout: () => request('/auth/logout', json('POST')),
 
   // payments

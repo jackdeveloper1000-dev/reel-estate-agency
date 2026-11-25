@@ -11,7 +11,7 @@ const crypto = require('crypto');
 const { getPool } = require('../db');
 const { APP_SECRET } = require('../config');
 const { sendOtp, isConsole } = require('../services/sms');
-const { setSession, clearSession, requireUser, makeToken } = require('../utils/session');
+const { setSession, clearSession, requireUser, makeToken, parseBrandKit } = require('../utils/session');
 
 const router = express.Router();
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -33,7 +33,7 @@ function normalizePhone(input) {
 }
 
 const hashCode = (phone, code) => crypto.createHmac('sha256', APP_SECRET).update(`${phone}:${code}`).digest('hex');
-const publicUser = (u) => (u ? { id: u.id, name: u.name, phone: u.phone } : null);
+const publicUser = (u) => (u ? { id: u.id, name: u.name, phone: u.phone, brandKit: parseBrandKit(u.brand_kit ?? u.brandKit) } : null);
 
 router.post('/otp', wrap(async (req, res) => {
   const db = getPool();
@@ -42,6 +42,9 @@ router.post('/otp', wrap(async (req, res) => {
   const name = String(req.body?.name || '').trim().replace(/\s+/g, ' ').slice(0, 100);
   if (!phone) return res.status(400).json({ error: 'Enter a valid 10-digit mobile number.' });
   if (purpose === 'signup' && name.length < 2) return res.status(400).json({ error: 'Please enter your name.' });
+  if (purpose === 'signup' && req.body?.acceptedTerms !== true) {
+    return res.status(400).json({ error: 'Please accept the Terms & Conditions to create an account.' });
+  }
 
   const [[existing]] = await db.query('SELECT id FROM users WHERE phone = ?', [phone]);
   if (purpose === 'signup' && existing) {
@@ -108,7 +111,7 @@ router.post('/verify', wrap(async (req, res) => {
   let [[user]] = await db.query('SELECT * FROM users WHERE phone = ?', [phone]);
   if (!user) {
     if (otp.purpose !== 'signup') return res.status(404).json({ error: 'No account with this number – please sign up.' });
-    const [r] = await db.query('INSERT INTO users (name, phone) VALUES (?, ?)', [otp.name || 'User', phone]);
+    const [r] = await db.query('INSERT INTO users (name, phone, terms_accepted_at) VALUES (?, ?, NOW())', [otp.name || 'User', phone]);
     [[user]] = await db.query('SELECT * FROM users WHERE id = ?', [r.insertId]);
   }
   if (!user.is_active) return res.status(403).json({ error: 'This account is disabled.' });
@@ -122,10 +125,27 @@ router.post('/verify', wrap(async (req, res) => {
 router.get('/me', (req, res) => res.json({ user: publicUser(req.user) }));
 
 router.patch('/me', requireUser, wrap(async (req, res) => {
-  const name = String(req.body?.name || '').trim().replace(/\s+/g, ' ').slice(0, 100);
-  if (name.length < 2) return res.status(400).json({ error: 'Please enter your name.' });
-  await getPool().query('UPDATE users SET name = ? WHERE id = ?', [name, req.user.id]);
-  res.json({ user: { ...req.user, name } });
+  const sets = [];
+  const vals = [];
+  let nextName = req.user.name;
+  let nextBrandKit = req.user.brandKit || {};
+
+  if (req.body?.name !== undefined) {
+    const name = String(req.body.name || '').trim().replace(/\s+/g, ' ').slice(0, 100);
+    if (name.length < 2) return res.status(400).json({ error: 'Please enter your name.' });
+    nextName = name;
+    sets.push('name = ?');
+    vals.push(name);
+  }
+  if (req.body?.brandKit !== undefined && typeof req.body.brandKit === 'object' && req.body.brandKit !== null) {
+    nextBrandKit = parseBrandKit(req.body.brandKit);
+    sets.push('brand_kit = ?');
+    vals.push(JSON.stringify(nextBrandKit));
+  }
+  if (sets.length) {
+    await getPool().query(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`, [...vals, req.user.id]);
+  }
+  res.json({ user: { ...req.user, name: nextName, brandKit: nextBrandKit } });
 }));
 
 router.post('/logout', (req, res) => {

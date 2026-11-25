@@ -8,6 +8,7 @@ export default function Auth({ mode = 'login', onDone }) {
   const [step, setStep] = useState('details'); // details → code
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [sentTo, setSentTo] = useState('');
   const [code, setCode] = useState('');
   const [devCode, setDevCode] = useState('');
@@ -16,7 +17,7 @@ export default function Auth({ mode = 'login', onDone }) {
   const [error, setError] = useState('');
   const codeRef = useRef(null);
 
-  useEffect(() => { setTab(mode); setStep('details'); setError(''); }, [mode]);
+  useEffect(() => { setTab(mode); setStep('details'); setError(''); setAcceptedTerms(false); }, [mode]);
   useEffect(() => {
     if (wait <= 0) return;
     const t = setTimeout(() => setWait((w) => w - 1), 1000);
@@ -25,7 +26,7 @@ export default function Auth({ mode = 'login', onDone }) {
   useEffect(() => { if (step === 'code') codeRef.current?.focus(); }, [step]);
 
   const switchTab = (t) => {
-    setTab(t); setStep('details'); setError(''); setCode(''); setDevCode('');
+    setTab(t); setStep('details'); setError(''); setCode(''); setDevCode(''); setAcceptedTerms(false);
     go(t === 'signup' ? 'signup' : 'login');
   };
 
@@ -34,9 +35,10 @@ export default function Auth({ mode = 'login', onDone }) {
     setError('');
     if (tab === 'signup' && name.trim().length < 2) return setError('Please enter your name.');
     if (phone.replace(/\D/g, '').length < 10) return setError('Enter your 10-digit mobile number.');
+    if (tab === 'signup' && !acceptedTerms) return setError('Please accept the Terms & Conditions to create an account.');
     setBusy(true);
     try {
-      const r = await api.sendOtp(phone, tab, name);
+      const r = await api.sendOtp(phone, tab, name, acceptedTerms);
       setSentTo(r.phone);
       setDevCode(r.devCode || '');
       setWait(r.resendAfter || 30);
@@ -112,6 +114,23 @@ export default function Auth({ mode = 'login', onDone }) {
                   />
                 </div>
               </label>
+              {tab === 'signup' && (
+                <label className="terms-check">
+                  <input
+                    type="checkbox"
+                    checked={acceptedTerms}
+                    onChange={(e) => { setAcceptedTerms(e.target.checked); if (error) setError(''); }}
+                    disabled={busy}
+                  />
+                  <span className="chk-box" aria-hidden="true" />
+                  <span>
+                    I agree to the{' '}
+                    <a href="/terms.html" target="_blank" rel="noopener noreferrer">Terms &amp; Conditions</a>
+                    {' '}and{' '}
+                    <a href="/privacy.html" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.
+                  </span>
+                </label>
+              )}
               {error && <p className="error">{error}</p>}
               <button className="btn btn-gold lg block" disabled={busy}>
                 {busy ? <span className="spinner" /> : 'Send OTP'}
